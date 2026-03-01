@@ -12,7 +12,7 @@ const swaggerDefinition = {
   },
   servers: [
     {
-      url: "https://the-other-wife.vercel.app",
+      url: "https://the-other-wife.vercel.app/",
       description: "Vercel Production",
     },
   ],
