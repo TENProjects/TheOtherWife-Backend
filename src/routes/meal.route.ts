@@ -9,7 +9,8 @@ import { authMiddleware } from "../middlewares/auth.middleware.js";
  * /api/v1/meals:
  *   get:
  *     summary: Get meals by query
- *     requestQuery:
+ *     tags: [Meal]
+ *     parameters:
  *       - name: search
  *         in: query
  *         required: false
@@ -56,6 +57,7 @@ import { authMiddleware } from "../middlewares/auth.middleware.js";
  * /api/v1/meals:
  *   post:
  *     summary: Create a new meal
+ *     tags: [Meal]
  *     requestBody:
  *       required: true
  *       content:
