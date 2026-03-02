@@ -6,7 +6,7 @@ import { authMiddleware } from "../middlewares/auth.middleware.js";
 
 /**
  * @swagger
- * /api/v1/meals/
+ * /api/v1/meals:
  *   get:
  *     summary: Get meals by query
  *     requestQuery:
@@ -53,7 +53,7 @@ import { authMiddleware } from "../middlewares/auth.middleware.js";
 
 /**
  * @swagger
- * /api/v1/meals/
+ * /api/v1/meals:
  *   post:
  *     summary: Create a new meal
  *     requestBody:

@@ -98,13 +98,12 @@ class UserRouter {
     this.userController = new UserController();
     this.router = Router();
     this.initializeRoutes();
-    // this.router.use(authMiddleware);
+    this.router.use(authMiddleware);
   }
 
   initializeRoutes() {
     this.router.get(
       "/me",
-      authMiddleware,
       roleGuardMiddleware(["customer", "vendor"]),
       this.userController.getCurrentUser,
     );
