@@ -110,7 +110,7 @@ export class AuthService {
 
             newUser.refreshToken = refreshToken;
             newUser.refreshTokenExpiry = new Date(
-              Date.now() + 7 * 24 * 60 * 1000,
+              Date.now() + 7 * 24 * 60 * 60 * 1000,
             );
             newUser.emailToken = emailToken;
             newUser.emailTokenExpiry = emailTokenExpiry;
