@@ -70,12 +70,12 @@ export class AuthController {
     ): Promise<any> => {
       const emailToken = req.query.emailToken as string;
       try {
-        const { userWithoutPassword } =
+        const userWithoutPassword =
           await this.authService.verifySignup(emailToken);
 
         return res.status(HttpStatus.OK).json({
           status: "ok",
-          message: "User login successful",
+          message: "Email verified successfully",
           data: {
             userWithoutPassword,
           },
