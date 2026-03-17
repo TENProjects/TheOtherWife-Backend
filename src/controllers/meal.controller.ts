@@ -31,6 +31,9 @@ export class MealController {
   getMeals = handleAsyncControl(
     async (req: Request<{ mealId: string }>, res: Response) => {
       try {
+        const pageSizeValue = Number(req.query.pageSize);
+        const pageNumberValue = Number(req.query.pageNumber);
+
         const query = {
           search: req.query.search as string,
           tags:
@@ -42,8 +45,10 @@ export class MealController {
         };
 
         const pagination = {
-          pageSize: Number(req.query.pageSize),
-          pageNumber: Number(req.query.pageNumber),
+          pageSize: Number.isFinite(pageSizeValue) ? pageSizeValue : undefined,
+          pageNumber: Number.isFinite(pageNumberValue)
+            ? pageNumberValue
+            : undefined,
         };
 
         const meal = await this.mealService.getMeals(query, pagination);

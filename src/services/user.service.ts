@@ -152,16 +152,27 @@ export class UserService {
       await user.save({ session });
 
       if (user.userType === "vendor") {
+        const vendor = await Vendor.findOne({ userId: user._id }).session(session);
+
+        if (!vendor) {
+          throw new NotFoundException(
+            "Vendor not found",
+            HttpStatus.NOT_FOUND,
+            ErrorCode.RESOURCE_NOT_FOUND,
+          );
+        }
+
         await Vendor.findOneAndUpdate(
           { userId: user._id },
           {
-            ...(status === "active"
-              ? {}
-              : {
-                  $set: {
-                    approvalStatus: "suspended",
-                  },
-                }),
+            $set: {
+              approvalStatus:
+                status === "active" && vendor.approvalStatus === "suspended"
+                  ? "approved"
+                  : status === "active"
+                    ? vendor.approvalStatus
+                    : "suspended",
+            },
           },
           { session },
         );
