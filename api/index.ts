@@ -1,5 +1,8 @@
 /** @format */
 
-import app from "../app.js";
+import { App } from "../app.js";
 
-export default app;
+const appInstance = new App();
+await appInstance.initializeDb();
+
+export default appInstance.app;
