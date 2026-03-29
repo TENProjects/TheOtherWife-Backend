@@ -1,7 +1,13 @@
 /** @format */
 
 import { config } from "dotenv";
-config({ path: "./.env" });
+
+const envFilePath =
+  process.env.ENV_FILE ||
+  process.env.DOTENV_CONFIG_PATH ||
+  (process.env.NODE_ENV === "production" ? "./.env.prod" : "./.env");
+
+config({ path: envFilePath });
 
 type EnvConfig = {
   PORT: string;

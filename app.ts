@@ -2,14 +2,13 @@
 
 import express, { Express } from "express";
 import cookieParser from "cookie-parser";
-import cors from "cors";
 import rateLimit from "express-rate-limit";
 import redoc from "redoc-express";
 import helmet from "helmet";
 
 import { errorHandler } from "./src/middlewares/error-handler.middleware.js";
 
-import { hostName, port, corsOrigin } from "./src/constants/env.js";
+import { hostName, port } from "./src/constants/env.js";
 import { Db } from "./src/config/db.config.js";
 import { swaggerSpec } from "./src/config/swagger.config.js";
 
@@ -65,12 +64,6 @@ export class App {
       }),
     );
     this.app.use(express.urlencoded({ extended: true }));
-    this.app.use(
-      cors({
-        origin: corsOrigin || true,
-        credentials: true,
-      }),
-    );
     this.app.use(cookieParser());
     this.app.use(
       rateLimit({
