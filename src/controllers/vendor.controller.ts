@@ -28,6 +28,24 @@ export class VendorController {
     },
   );
 
+  getFeaturedVendors = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const limitValue = Number(req.query.limit);
+      const featuredVendors = await this.vendorService.getFeaturedVendors(
+        req.user?.userType === "customer"
+          ? (req.user?._id as unknown as string)
+          : undefined,
+        Number.isFinite(limitValue) ? limitValue : undefined,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Featured vendors fetched successfully",
+        data: featuredVendors,
+      } as ApiResponse);
+    },
+  );
+
   updateVendorProfile = handleAsyncControl(
     async (
       req: Request<

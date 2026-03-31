@@ -5,6 +5,12 @@ import { MealController } from "../controllers/meal.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
 import { statusCheck } from "../middlewares/status-check.middleware.js";
+import { optionalAuthMiddleware } from "../middlewares/optional-auth.middleware.js";
+import { zodValidation } from "../middlewares/validation.js";
+import {
+  createMealReviewSchema,
+  updateMealSchema,
+} from "../zod-schema/meal.schema.js";
 
 /**
  * @swagger
@@ -56,6 +62,109 @@ import { statusCheck } from "../middlewares/status-check.middleware.js";
  */
 
 /**
+ * @swagger
+ * /api/v1/meals/{id}:
+ *   get:
+ *     summary: Get meal details
+ *     tags: [Meal]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Meal fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
+ * /api/v1/meals/{id}:
+ *   put:
+ *     summary: Update a meal
+ *     tags: [Meal]
+ *     description: Requires an authenticated approved vendor account and ownership of the meal
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Meal updated successfully
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ *   delete:
+ *     summary: Delete a meal
+ *     tags: [Meal]
+ *     description: Requires an authenticated approved vendor account and ownership of the meal
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Meal deleted successfully
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
+ * /api/v1/meals/{id}/reviews:
+ *   post:
+ *     summary: Create a meal review
+ *     tags: [Meal]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: "#/components/schemas/MealReviewRequest"
+ *     responses:
+ *       201:
+ *         description: Meal review created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ *
  * @swagger
  * /api/v1/meals:
  *   post:
@@ -112,7 +221,34 @@ class MealRouter {
   }
 
   initializeRoutes() {
-    this.router.get("/", this.mealController.getMeals);
+    this.router.get("/", optionalAuthMiddleware, this.mealController.getMeals);
+    this.router.get(
+      "/:id",
+      optionalAuthMiddleware,
+      this.mealController.getMealDetails,
+    );
+    this.router.put(
+      "/:id",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      statusCheck(["approved"]),
+      zodValidation(updateMealSchema),
+      this.mealController.updateMeal,
+    );
+    this.router.delete(
+      "/:id",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      statusCheck(["approved"]),
+      this.mealController.deleteMeal,
+    );
+    this.router.post(
+      "/:id/reviews",
+      authMiddleware,
+      roleGuardMiddleware(["customer"]),
+      zodValidation(createMealReviewSchema),
+      this.mealController.createMealReview,
+    );
     this.router.post(
       "/",
       authMiddleware,

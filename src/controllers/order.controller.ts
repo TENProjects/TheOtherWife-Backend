@@ -41,4 +41,65 @@ export class OrderController {
       } as ApiResponse);
     },
   );
+
+  getVendorOrders = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const userId = req.user?._id as unknown as string;
+      const orders = await this.orderService.getVendorOrders(userId);
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Vendor orders fetched successfully",
+        data: orders,
+      } as ApiResponse);
+    },
+  );
+
+  getVendorOrderById = handleAsyncControl(
+    async (req: Request<{ orderId: string }>, res: Response): Promise<Response> => {
+      const userId = req.user?._id as unknown as string;
+      const order = await this.orderService.getVendorOrderById(
+        userId,
+        req.params.orderId,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Vendor order fetched successfully",
+        data: order,
+      } as ApiResponse);
+    },
+  );
+
+  acceptVendorOrder = handleAsyncControl(
+    async (req: Request<{ orderId: string }>, res: Response): Promise<Response> => {
+      const userId = req.user?._id as unknown as string;
+      const order = await this.orderService.acceptVendorOrder(
+        userId,
+        req.params.orderId,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Order accepted successfully",
+        data: order,
+      } as ApiResponse);
+    },
+  );
+
+  rejectVendorOrder = handleAsyncControl(
+    async (req: Request<{ orderId: string }>, res: Response): Promise<Response> => {
+      const userId = req.user?._id as unknown as string;
+      const order = await this.orderService.rejectVendorOrder(
+        userId,
+        req.params.orderId,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Order rejected successfully",
+        data: order,
+      } as ApiResponse);
+    },
+  );
 }

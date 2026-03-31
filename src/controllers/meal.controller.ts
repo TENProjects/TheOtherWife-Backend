@@ -28,6 +28,26 @@ export class MealController {
     }
   });
 
+  updateMeal = handleAsyncControl(
+    async (
+      req: Request<{ id: string }>,
+      res: Response,
+    ): Promise<Response> => {
+      const userId = req?.user?._id as unknown as string;
+      const meal = await this.mealService.updateMeal(
+        userId,
+        req.params.id,
+        req.body,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Meal updated successfully",
+        data: meal,
+      } as ApiResponse);
+    },
+  );
+
   getMeals = handleAsyncControl(
     async (req: Request<{ mealId: string }>, res: Response) => {
       try {
@@ -35,6 +55,10 @@ export class MealController {
         const pageNumberValue = Number(req.query.pageNumber);
 
         const query = {
+          customerUserId:
+            req.user?.userType === "customer"
+              ? (req.user?._id as unknown as string)
+              : undefined,
           search: req.query.search as string,
           tags:
             typeof req.query.tags === "string"
@@ -64,6 +88,55 @@ export class MealController {
       } catch (error) {
         throw error;
       }
+    },
+  );
+
+  getMealDetails = handleAsyncControl(
+    async (req: Request<{ id: string }>, res: Response) => {
+      const meal = await this.mealService.getMealDetails(req.params.id);
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Meal fetched successfully",
+        data: meal,
+      } as ApiResponse);
+    },
+  );
+
+  createMealReview = handleAsyncControl(
+    async (
+      req: Request<
+        { id: string },
+        {},
+        {
+          orderId: string;
+          rating: number;
+          comment?: string;
+        }
+      >,
+      res: Response,
+    ) => {
+      const customerId = req.user?._id as unknown as string;
+      const mealReview = await this.mealService.createMealReview(
+        customerId,
+        req.params.id,
+        req.body,
+      );
+
+      return res.status(HttpStatus.CREATED).json({
+        status: "ok",
+        message: "Meal review created successfully",
+        data: mealReview,
+      } as ApiResponse);
+    },
+  );
+
+  deleteMeal = handleAsyncControl(
+    async (req: Request<{ id: string }>, res: Response): Promise<Response> => {
+      const userId = req?.user?._id as unknown as string;
+      await this.mealService.deleteMeal(userId, req.params.id);
+
+      return res.status(HttpStatus.NO_CONTENT).send();
     },
   );
 }

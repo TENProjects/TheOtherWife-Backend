@@ -98,6 +98,18 @@ const swaggerDefinition = {
             },
             description: "The tags of the meal",
           },
+          ratingAverage: {
+            type: "number",
+            description: "The average rating for the meal",
+          },
+          ratingCount: {
+            type: "number",
+            description: "The number of ratings for the meal",
+          },
+          ratingScore: {
+            type: "number",
+            description: "Weighted score derived from the meal ratings",
+          },
         },
       },
       Customer: {
@@ -164,6 +176,140 @@ const swaggerDefinition = {
             type: "string",
             description: "The vendor rejection reason",
           },
+          ratingAverage: {
+            type: "number",
+            description: "The vendor average rating",
+          },
+          ratingCount: {
+            type: "number",
+            description: "The number of ratings received by the vendor",
+          },
+          ratingScore: {
+            type: "number",
+            description:
+              "Weighted rating score used for featured vendor ranking",
+          },
+        },
+      },
+      MealReviewRequest: {
+        type: "object",
+        required: ["orderId", "rating"],
+        properties: {
+          orderId: {
+            type: "string",
+            description: "The order being reviewed",
+          },
+          rating: {
+            type: "number",
+            minimum: 1,
+            maximum: 5,
+            description: "The rating score from 1 to 5",
+          },
+          comment: {
+            type: "string",
+            description: "Optional review comment",
+          },
+        },
+      },
+      VendorOnboardingStep1Request: {
+        type: "object",
+        required: [
+          "firstName",
+          "lastName",
+          "email",
+          "phoneNumber",
+          "password",
+          "confirmPassword",
+          "state",
+          "city",
+        ],
+        properties: {
+          firstName: { type: "string" },
+          lastName: { type: "string" },
+          email: { type: "string", format: "email" },
+          phoneNumber: { type: "string" },
+          password: { type: "string", format: "password" },
+          confirmPassword: { type: "string", format: "password" },
+          state: { type: "string" },
+          city: { type: "string" },
+          address: { type: "string" },
+          socials: {
+            type: "object",
+            properties: {
+              instagram: { type: "string" },
+              facebook: { type: "string" },
+              twitter: { type: "string" },
+            },
+          },
+        },
+      },
+      VendorOnboardingStep2Request: {
+        type: "object",
+        required: [
+          "businessName",
+          "yearsOfExperience",
+          "cuisines",
+          "bankName",
+          "accountNumber",
+        ],
+        properties: {
+          businessName: { type: "string" },
+          businessDescription: { type: "string" },
+          businessLogoUrl: { type: "string" },
+          yearsOfExperience: { type: "number" },
+          cuisines: {
+            type: "array",
+            items: { type: "string" },
+          },
+          bankName: { type: "string" },
+          accountNumber: { type: "string" },
+          accountName: { type: "string" },
+        },
+      },
+      VendorOnboardingUploadSignatureRequest: {
+        type: "object",
+        required: ["documentType"],
+        properties: {
+          documentType: {
+            type: "string",
+            enum: ["governmentId", "businessCertificate", "displayImage"],
+          },
+        },
+      },
+      VendorOnboardingDocumentRequest: {
+        type: "object",
+        required: ["fileUrl", "publicId"],
+        properties: {
+          fileUrl: { type: "string" },
+          fileName: { type: "string" },
+          mimeType: { type: "string" },
+          publicId: { type: "string" },
+          resourceType: { type: "string" },
+        },
+      },
+      VendorOnboardingStep3Request: {
+        type: "object",
+        required: [
+          "governmentId",
+          "businessCertificate",
+          "displayImage",
+          "confirmedAccuracy",
+          "acceptedTerms",
+          "acceptedVerification",
+        ],
+        properties: {
+          governmentId: {
+            $ref: "#/components/schemas/VendorOnboardingDocumentRequest",
+          },
+          businessCertificate: {
+            $ref: "#/components/schemas/VendorOnboardingDocumentRequest",
+          },
+          displayImage: {
+            $ref: "#/components/schemas/VendorOnboardingDocumentRequest",
+          },
+          confirmedAccuracy: { type: "boolean" },
+          acceptedTerms: { type: "boolean" },
+          acceptedVerification: { type: "boolean" },
         },
       },
       Address: {

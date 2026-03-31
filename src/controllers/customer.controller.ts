@@ -32,6 +32,20 @@ export class CustomerController {
     },
   );
 
+  getCurrentCustomerProfile = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const userId = req?.user?._id as unknown as string;
+      const { customer } =
+        await this.customerService.getCurrentCustomerProfile(userId);
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Customer profile fetched",
+        data: customer,
+      } as ApiResponse);
+    },
+  );
+
   updateCustomerProfile = handleAsyncControl(
     async (req: Request<{ id: string }>, res: Response): Promise<Response> => {
       try {
@@ -54,6 +68,20 @@ export class CustomerController {
     },
   );
 
+  updateCurrentCustomerProfile = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const userId = req?.user?._id as unknown as string;
+      const customerProfile =
+        await this.customerService.updateCurrentCustomerProfile(userId, req.body);
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Customer updated",
+        data: customerProfile,
+      } as ApiResponse);
+    },
+  );
+
   deleteCustomerProfile = handleAsyncControl(
     async (req: Request<{ id: string }>, res: Response): Promise<Response> => {
       try {
@@ -64,6 +92,14 @@ export class CustomerController {
       } catch (error) {
         throw error;
       }
+    },
+  );
+
+  deleteCurrentCustomerProfile = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const userId = req?.user?._id as unknown as string;
+      await this.customerService.deleteCurrentCustomerProfile(userId);
+      return res.status(HttpStatus.NO_CONTENT).send();
     },
   );
 }

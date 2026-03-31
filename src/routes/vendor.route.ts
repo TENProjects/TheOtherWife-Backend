@@ -4,6 +4,28 @@ import { Router } from "express";
 import { VendorController } from "../controllers/vendor.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
+import { optionalAuthMiddleware } from "../middlewares/optional-auth.middleware.js";
+
+/**
+ * @swagger
+ * /api/v1/vendors/featured:
+ *   get:
+ *     summary: Get featured vendors ranked by ratings
+ *     tags: [Vendor]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: number
+ *     responses:
+ *       "200":
+ *         description: Featured vendors fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ */
 
 /**
  * @swagger
@@ -292,38 +314,48 @@ class VendorRouter {
   constructor() {
     this.vendorController = new VendorController();
     this.router = Router();
-    this.router.use(authMiddleware);
     this.initializeRoutes();
   }
 
   initializeRoutes() {
     this.router.get(
+      "/featured",
+      optionalAuthMiddleware,
+      this.vendorController.getFeaturedVendors,
+    );
+    this.router.get(
       "/me",
+      authMiddleware,
       roleGuardMiddleware(["vendor"]),
       this.vendorController.getVendorProfile,
     );
     this.router.put(
       "/me",
+      authMiddleware,
       roleGuardMiddleware(["vendor"]),
       this.vendorController.updateVendorProfile,
     );
     this.router.put(
       "/approve/:id",
+      authMiddleware,
       roleGuardMiddleware(["admin"]),
       this.vendorController.approveVendor,
     );
     this.router.put(
       "/reject/:id",
+      authMiddleware,
       roleGuardMiddleware(["admin"]),
       this.vendorController.rejectVendor,
     );
     this.router.put(
       "/suspend/:id",
+      authMiddleware,
       roleGuardMiddleware(["admin"]),
       this.vendorController.suspendVendor,
     );
     this.router.delete(
       "/me",
+      authMiddleware,
       roleGuardMiddleware(["vendor"]),
       this.vendorController.deleteVendorProfile,
     );

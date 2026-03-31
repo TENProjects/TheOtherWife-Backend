@@ -10,15 +10,18 @@ export interface MealDocument extends Document {
   description: string;
   price: number;
   imageUrl: string;
-  isAvailable: boolean;
+  isAvailable: "pending" | "available" | "unavailable";
   availableFrom: string;
-  availableUntil: string;
+  availableUntil: Date;
   primaryImageUrl: string;
   additionalImages: Array<string>;
   tags: Array<string>;
   preparationTime: number;
   servingSize: string;
   additionalData: string;
+  ratingAverage: number;
+  ratingCount: number;
+  ratingScore: number;
   isDeleted: boolean;
 }
 
@@ -82,6 +85,24 @@ const MealSchema = new Schema({
   additionalData: {
     type: String,
     required: false,
+  },
+  ratingAverage: {
+    type: Number,
+    required: true,
+    default: 0,
+    min: 0,
+  },
+  ratingCount: {
+    type: Number,
+    required: true,
+    default: 0,
+    min: 0,
+  },
+  ratingScore: {
+    type: Number,
+    required: true,
+    default: 0,
+    min: 0,
   },
   isDeleted: {
     type: Boolean,

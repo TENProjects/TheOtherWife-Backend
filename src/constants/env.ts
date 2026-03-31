@@ -20,6 +20,9 @@ export const paystackSecretKey: string = envconfig.PAYSTACK_SECRET_KEY;
 export const paystackPublicKey: string = envconfig.PAYSTACK_PUBLIC_KEY;
 export const paystackBaseUrl: string = envconfig.PAYSTACK_BASE_URL;
 export const paystackCallbackUrl: string = envconfig.PAYSTACK_CALLBACK_URL;
+export const cloudinaryCloudName: string = envconfig.CLOUDINARY_CLOUD_NAME;
+export const cloudinaryApiKey: string = envconfig.CLOUDINARY_API_KEY;
+export const cloudinaryApiSecret: string = envconfig.CLOUDINARY_API_SECRET;
 
 console.log("port", !!port);
 console.log("hostName", !!hostName);
@@ -36,3 +39,6 @@ console.log("paystackSecretKey", !!paystackSecretKey);
 console.log("paystackPublicKey", !!paystackPublicKey);
 console.log("paystackBaseUrl", !!paystackBaseUrl);
 console.log("paystackCallbackUrl", !!paystackCallbackUrl);
+console.log("cloudinaryCloudName", !!cloudinaryCloudName);
+console.log("cloudinaryApiKey", !!cloudinaryApiKey);
+console.log("cloudinaryApiSecret", !!cloudinaryApiSecret);

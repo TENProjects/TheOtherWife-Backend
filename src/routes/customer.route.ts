@@ -4,6 +4,51 @@ import { CustomerController } from "../controllers/customer.controller.js";
 import { Router } from "express";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
+import { zodValidation } from "../middlewares/validation.js";
+import { updateCurrentCustomerProfileSchema } from "../zod-schema/customer.schema.js";
+
+/**
+ * @swagger
+ * /api/v1/customers/me:
+ *   get:
+ *     summary: Get current customer profile
+ *     tags: [Customer]
+ *     responses:
+ *       "200":
+ *         description: Current customer profile fetched
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ *   put:
+ *     summary: Update current customer profile
+ *     tags: [Customer]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               profileImageUrl: { type: string }
+ *               firstName: { type: string }
+ *               lastName: { type: string }
+ *               email: { type: string, format: email }
+ *               phoneNumber: { type: string }
+ *     responses:
+ *       "200":
+ *         description: Current customer profile updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ *   delete:
+ *     summary: Delete current customer profile
+ *     tags: [Customer]
+ *     responses:
+ *       "204":
+ *         description: Current customer profile deleted
+ */
 
 /**
  * @swagger
@@ -169,6 +214,22 @@ class CustomerRouter {
   }
 
   initializeRoutes() {
+    this.router.get(
+      "/me",
+      roleGuardMiddleware(["customer"]),
+      this.customerController.getCurrentCustomerProfile,
+    );
+    this.router.put(
+      "/me",
+      roleGuardMiddleware(["customer"]),
+      zodValidation(updateCurrentCustomerProfileSchema),
+      this.customerController.updateCurrentCustomerProfile,
+    );
+    this.router.delete(
+      "/me",
+      roleGuardMiddleware(["customer"]),
+      this.customerController.deleteCurrentCustomerProfile,
+    );
     this.router.get(
       "/:id",
       roleGuardMiddleware(["customer", "admin"]),

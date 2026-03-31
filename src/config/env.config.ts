@@ -26,6 +26,9 @@ type EnvConfig = {
   PAYSTACK_PUBLIC_KEY: string;
   PAYSTACK_BASE_URL: string;
   PAYSTACK_CALLBACK_URL: string;
+  CLOUDINARY_CLOUD_NAME: string;
+  CLOUDINARY_API_KEY: string;
+  CLOUDINARY_API_SECRET: string;
 };
 
 const getEnvConfig = (): EnvConfig => {
@@ -48,6 +51,9 @@ const getEnvConfig = (): EnvConfig => {
     PAYSTACK_PUBLIC_KEY: getEnv("PAYSTACK_PUBLIC_KEY"),
     PAYSTACK_BASE_URL: getEnv("PAYSTACK_BASE_URL") || "https://api.paystack.co",
     PAYSTACK_CALLBACK_URL: getEnv("PAYSTACK_CALLBACK_URL"),
+    CLOUDINARY_CLOUD_NAME: getEnv("CLOUDINARY_CLOUD_NAME"),
+    CLOUDINARY_API_KEY: getEnv("CLOUDINARY_API_KEY"),
+    CLOUDINARY_API_SECRET: getEnv("CLOUDINARY_API_SECRET"),
   };
 };
 

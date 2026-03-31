@@ -9,9 +9,55 @@ import User from "../models/user.model.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { transaction } from "../util/transaction.util.js";
 import { ClientSession } from "mongoose";
+import { SearchRadiusService } from "./search-radius.service.js";
 
 export class VendorService {
-  constructor() {}
+  private searchRadiusService: SearchRadiusService;
+
+  constructor() {
+    this.searchRadiusService = new SearchRadiusService();
+  }
+
+  private featuredVendorMinimumReviews = 5;
+
+  getFeaturedVendors = async (customerUserId?: string, limit?: number) => {
+    const normalizedLimit = Math.min(Math.max(limit ?? 6, 1), 20);
+    const { vendorIds, strategy, customerAddress } =
+      await this.searchRadiusService.getVendorSearchContext(customerUserId);
+
+    const query: Record<string, any> = {
+      approvalStatus: "approved",
+      ratingCount: { $gte: this.featuredVendorMinimumReviews },
+    };
+
+    if (vendorIds) {
+      query._id = { $in: vendorIds };
+    }
+
+    const vendors = await Vendor.find(query)
+      .select(
+        "businessName businessDescription businessLogoUrl ratingAverage ratingCount ratingScore addressId",
+      )
+      .populate("addressId", "city state country")
+      .sort({
+        ratingScore: -1,
+        ratingCount: -1,
+        ratingAverage: -1,
+      })
+      .limit(normalizedLimit);
+
+    return {
+      vendors,
+      meta: {
+        limit: normalizedLimit,
+        minimumReviews: this.featuredVendorMinimumReviews,
+        searchRadius: {
+          strategy,
+          customerAddress,
+        },
+      },
+    };
+  };
 
   getVendorProfile = async (userId: string) => {
     if (!userId) {

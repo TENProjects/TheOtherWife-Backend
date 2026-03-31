@@ -12,6 +12,9 @@ export interface VendorDocument extends Document {
   approvedBy: mongoose.Types.ObjectId;
   approvedAt: Date;
   rejectionReason: string;
+  ratingAverage: number;
+  ratingCount: number;
+  ratingScore: number;
   additionalData: Object;
 }
 
@@ -57,6 +60,24 @@ const VendorSchema = new Schema({
   rejectionReason: {
     type: String,
     required: false,
+  },
+  ratingAverage: {
+    type: Number,
+    required: true,
+    default: 0,
+    min: 0,
+  },
+  ratingCount: {
+    type: Number,
+    required: true,
+    default: 0,
+    min: 0,
+  },
+  ratingScore: {
+    type: Number,
+    required: true,
+    default: 0,
+    min: 0,
   },
   additionalData: {
     type: Object,
