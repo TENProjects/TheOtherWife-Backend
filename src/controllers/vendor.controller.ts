@@ -46,6 +46,19 @@ export class VendorController {
     },
   );
 
+  getVendorReviews = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const userId = req?.user?._id as unknown as string;
+      const reviews = await this.vendorService.getVendorReviews(userId);
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Vendor reviews fetched successfully",
+        data: reviews,
+      } as ApiResponse);
+    },
+  );
+
   updateVendorProfile = handleAsyncControl(
     async (
       req: Request<

@@ -10,6 +10,7 @@ import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { transaction } from "../util/transaction.util.js";
 import { ClientSession } from "mongoose";
 import { SearchRadiusService } from "./search-radius.service.js";
+import MealReview from "../models/mealReview.model.js";
 
 export class VendorService {
   private searchRadiusService: SearchRadiusService;
@@ -81,6 +82,40 @@ export class VendorService {
     }
 
     return { vendor };
+  };
+
+  getVendorReviews = async (userId: string) => {
+    if (!userId) {
+      throw new BadRequestException(
+        "User ID is required",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const vendor = await Vendor.findOne({ userId });
+
+    if (!vendor) {
+      throw new NotFoundException(
+        "Vendor not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    const reviews = await MealReview.find({ vendorId: vendor._id })
+      .populate("mealId", "name primaryImageUrl categoryName")
+      .populate("customerId", "firstName lastName")
+      .sort({ createdAt: -1 });
+
+    return {
+      reviews,
+      summary: {
+        ratingAverage: vendor.ratingAverage,
+        ratingCount: vendor.ratingCount,
+        ratingScore: vendor.ratingScore,
+      },
+    };
   };
 
   updateVendorProfile = transaction.use(

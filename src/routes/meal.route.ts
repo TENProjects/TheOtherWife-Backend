@@ -164,7 +164,9 @@ import {
  *         description: Forbidden
  *       "404":
  *         description: Not found
- *
+ */
+
+/**
  * @swagger
  * /api/v1/meals:
  *   post:

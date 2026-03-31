@@ -29,6 +29,27 @@ import { optionalAuthMiddleware } from "../middlewares/optional-auth.middleware.
 
 /**
  * @swagger
+ * /api/v1/vendors/me/reviews:
+ *   get:
+ *     summary: Get current vendor reviews
+ *     tags: [Vendor]
+ *     responses:
+ *       "200":
+ *         description: Vendor reviews fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
  * /api/v1/vendors/me:
  *   get:
  *     summary: Get vendor profile
@@ -322,6 +343,12 @@ class VendorRouter {
       "/featured",
       optionalAuthMiddleware,
       this.vendorController.getFeaturedVendors,
+    );
+    this.router.get(
+      "/me/reviews",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      this.vendorController.getVendorReviews,
     );
     this.router.get(
       "/me",
