@@ -450,6 +450,33 @@ export class MealService {
     };
   };
 
+  getVendorMeals = async (userId: string) => {
+    if (!userId) {
+      throw new BadRequestException(
+        "User ID is required",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const vendor = await Vendor.findOne({ userId });
+
+    if (!vendor) {
+      throw new NotFoundException(
+        "Vendor not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    const meals = await Meal.find({
+      vendorId: vendor._id,
+      isDeleted: false,
+    }).sort({ createdAt: -1 });
+
+    return { meals };
+  };
+
   getMealDetails = async (mealId: string) => {
     if (!mealId) {
       throw new BadRequestException(

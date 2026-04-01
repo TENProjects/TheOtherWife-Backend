@@ -63,6 +63,26 @@ import {
 
 /**
  * @swagger
+ * /api/v1/meals/vendor/my-meals:
+ *   get:
+ *     summary: Get current vendor meals
+ *     tags: [Meal]
+ *     description: Requires an authenticated approved vendor account
+ *     responses:
+ *       200:
+ *         description: Vendor meals fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+
+/**
+ * @swagger
  * /api/v1/meals/{id}:
  *   get:
  *     summary: Get meal details
@@ -224,6 +244,13 @@ class MealRouter {
 
   initializeRoutes() {
     this.router.get("/", optionalAuthMiddleware, this.mealController.getMeals);
+    this.router.get(
+      "/vendor/my-meals",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      statusCheck(["approved"]),
+      this.mealController.getVendorMeals,
+    );
     this.router.get(
       "/:id",
       optionalAuthMiddleware,

@@ -91,6 +91,19 @@ export class MealController {
     },
   );
 
+  getVendorMeals = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const userId = req?.user?._id as unknown as string;
+      const meals = await this.mealService.getVendorMeals(userId);
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Vendor meals fetched successfully",
+        data: meals,
+      } as ApiResponse);
+    },
+  );
+
   getMealDetails = handleAsyncControl(
     async (req: Request<{ id: string }>, res: Response) => {
       const meal = await this.mealService.getMealDetails(req.params.id);
