@@ -25,6 +25,7 @@ import { checkoutRouter } from "./src/routes/checkout.route.js";
 import { paymentRouter } from "./src/routes/payment.route.js";
 import { orderRouter } from "./src/routes/order.route.js";
 import { vendorOnboardingRouter } from "./src/routes/vendor-onboarding.route.js";
+import { uploadRouter } from "./src/routes/upload.route.js";
 
 export class App {
   app: Express;
@@ -94,6 +95,7 @@ export class App {
     this.app.use("/api/v1/customers", customerRouter);
     this.app.use("/api/v1/vendors", vendorRouter);
     this.app.use("/api/v1/vendor-onboarding", vendorOnboardingRouter);
+    this.app.use("/api/v1/uploads", uploadRouter);
     this.app.use("/api/v1/carts", cartRouter);
     this.app.use("/api/v1/meals", mealRouter);
     this.app.use("/api/v1/checkout", checkoutRouter);

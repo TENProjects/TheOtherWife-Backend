@@ -5,6 +5,8 @@ import { VendorController } from "../controllers/vendor.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
 import { optionalAuthMiddleware } from "../middlewares/optional-auth.middleware.js";
+import { zodValidation } from "../middlewares/validation.js";
+import { updateVendorProfileSchema } from "../zod-schema/vendor.schema.js";
 
 /**
  * @swagger
@@ -360,6 +362,7 @@ class VendorRouter {
       "/me",
       authMiddleware,
       roleGuardMiddleware(["vendor"]),
+      zodValidation(updateVendorProfileSchema),
       this.vendorController.updateVendorProfile,
     );
     this.router.put(

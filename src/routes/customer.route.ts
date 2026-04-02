@@ -238,6 +238,7 @@ class CustomerRouter {
     this.router.put(
       "/:id",
       roleGuardMiddleware(["customer"]),
+      zodValidation(updateCurrentCustomerProfileSchema),
       this.customerController.updateCustomerProfile,
     );
     this.router.delete(

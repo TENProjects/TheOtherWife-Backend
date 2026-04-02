@@ -8,6 +8,7 @@ import { statusCheck } from "../middlewares/status-check.middleware.js";
 import { optionalAuthMiddleware } from "../middlewares/optional-auth.middleware.js";
 import { zodValidation } from "../middlewares/validation.js";
 import {
+  createMealSchema,
   createMealReviewSchema,
   updateMealSchema,
 } from "../zod-schema/meal.schema.js";
@@ -283,6 +284,7 @@ class MealRouter {
       authMiddleware,
       roleGuardMiddleware(["vendor"]),
       statusCheck(["approved"]),
+      zodValidation(createMealSchema),
       this.mealController.createMeal,
     );
   }

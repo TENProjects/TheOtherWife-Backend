@@ -14,6 +14,11 @@ type CloudinaryDocumentType =
   | "governmentId"
   | "businessCertificate"
   | "displayImage";
+type CloudinaryAssetType =
+  | "vendorDocument"
+  | "vendorBusinessLogo"
+  | "mealImage"
+  | "customerProfileImage";
 
 export class CloudinaryService {
   private ensureConfigured = () => {
@@ -30,11 +35,20 @@ export class CloudinaryService {
     userId: string,
     documentType: CloudinaryDocumentType,
   ) => {
+    return this.createUploadSignature(userId, "vendorDocument", documentType);
+  };
+
+  createUploadSignature = (
+    userId: string,
+    assetType: CloudinaryAssetType,
+    assetLabel?: string,
+  ) => {
     this.ensureConfigured();
 
     const timestamp = Math.floor(Date.now() / 1000);
-    const folder = `the-other-wife/vendors/${userId}/${documentType}`;
-    const publicId = `${documentType}-${timestamp}`;
+    const assetName = assetLabel ?? assetType;
+    const folder = `the-other-wife/${assetType}/${userId}`;
+    const publicId = `${assetName}-${timestamp}`;
     const paramsToSign = `folder=${folder}&public_id=${publicId}&timestamp=${timestamp}`;
     const signature = crypto
       .createHash("sha1")

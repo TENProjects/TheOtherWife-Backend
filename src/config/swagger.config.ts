@@ -276,6 +276,21 @@ const swaggerDefinition = {
           },
         },
       },
+      CloudinaryUploadSignatureRequest: {
+        type: "object",
+        required: ["assetType"],
+        properties: {
+          assetType: {
+            type: "string",
+            enum: [
+              "vendorDocument",
+              "vendorBusinessLogo",
+              "mealImage",
+              "customerProfileImage",
+            ],
+          },
+        },
+      },
       VendorOnboardingDocumentRequest: {
         type: "object",
         required: ["fileUrl", "publicId"],
