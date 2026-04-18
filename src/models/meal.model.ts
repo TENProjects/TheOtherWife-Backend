@@ -10,9 +10,7 @@ export interface MealDocument extends Document {
   description: string;
   price: number;
   imageUrl: string;
-  isAvailable: "pending" | "available" | "unavailable";
-  availableFrom: string;
-  availableUntil: Date;
+  isAvailable: boolean;
   primaryImageUrl: string;
   additionalImages: Array<string>;
   tags: Array<string>;
@@ -52,17 +50,8 @@ const MealSchema = new Schema({
     required: true,
   },
   isAvailable: {
-    type: String,
-    enum: ["pending", "available", "unavailable"],
-    default: "pending",
-  },
-  availableFrom: {
-    type: String,
-    required: true,
-  },
-  availableUntil: {
-    type: Date,
-    required: true,
+    type: Boolean,
+    default: false,
   },
   primaryImageUrl: {
     type: String,

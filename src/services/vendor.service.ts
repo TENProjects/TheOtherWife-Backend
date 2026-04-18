@@ -11,6 +11,11 @@ import { transaction } from "../util/transaction.util.js";
 import { ClientSession } from "mongoose";
 import { SearchRadiusService } from "./search-radius.service.js";
 import MealReview from "../models/mealReview.model.js";
+import {
+  isVendorOpenAt,
+  isVendorReceivingOrders,
+  VendorOpeningHours,
+} from "../util/vendor-opening-hours.util.js";
 
 export class VendorService {
   private searchRadiusService: SearchRadiusService;
@@ -28,6 +33,7 @@ export class VendorService {
 
     const query: Record<string, any> = {
       approvalStatus: "approved",
+      isAvailable: { $ne: false },
       ratingCount: { $gte: this.featuredVendorMinimumReviews },
     };
 
@@ -37,7 +43,7 @@ export class VendorService {
 
     const vendors = await Vendor.find(query)
       .select(
-        "businessName businessDescription businessLogoUrl ratingAverage ratingCount ratingScore addressId",
+        "businessName businessDescription businessLogoUrl ratingAverage ratingCount ratingScore addressId openingHours",
       )
       .populate("addressId", "city state country")
       .sort({
@@ -45,10 +51,14 @@ export class VendorService {
         ratingCount: -1,
         ratingAverage: -1,
       })
-      .limit(normalizedLimit);
+      .limit(normalizedLimit * 3);
+
+    const currentlyOpenVendors = vendors
+      .filter((vendor) => isVendorReceivingOrders(vendor))
+      .slice(0, normalizedLimit);
 
     return {
-      vendors,
+      vendors: currentlyOpenVendors,
       meta: {
         limit: normalizedLimit,
         minimumReviews: this.featuredVendorMinimumReviews,
@@ -114,6 +124,38 @@ export class VendorService {
         ratingAverage: vendor.ratingAverage,
         ratingCount: vendor.ratingCount,
         ratingScore: vendor.ratingScore,
+      },
+    };
+  };
+
+  getVendorAvailability = async (userId: string) => {
+    if (!userId) {
+      throw new BadRequestException(
+        "User ID is required",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const vendor = await Vendor.findOne({ userId }).select(
+      "isAvailable openingHours approvalStatus",
+    );
+
+    if (!vendor) {
+      throw new NotFoundException(
+        "Vendor not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    return {
+      availability: {
+        isAvailable: vendor.isAvailable !== false,
+        openingHours: vendor.openingHours,
+        isOpenNow: isVendorOpenAt(vendor.openingHours),
+        isReceivingOrders: isVendorReceivingOrders(vendor),
+        approvalStatus: vendor.approvalStatus,
       },
     };
   };
@@ -187,6 +229,52 @@ export class VendorService {
       }
 
       return { ...{ user }, ...{ vendor } };
+    },
+  );
+
+  updateVendorAvailability = transaction.use(
+    async (
+      session: ClientSession,
+      userId: string,
+      body: { isAvailable?: boolean; openingHours?: VendorOpeningHours },
+    ) => {
+      if (!userId) {
+        throw new BadRequestException(
+          "User ID is required",
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
+
+      const updates: Record<string, boolean | VendorOpeningHours> = {};
+      if (body.isAvailable !== undefined) updates.isAvailable = body.isAvailable;
+      if (body.openingHours !== undefined) updates.openingHours = body.openingHours;
+
+      const vendor = await Vendor.findOneAndUpdate(
+        { userId },
+        { $set: updates },
+        { new: true },
+      )
+        .select("isAvailable openingHours approvalStatus")
+        .session(session);
+
+      if (!vendor) {
+        throw new NotFoundException(
+          "Vendor not found",
+          HttpStatus.NOT_FOUND,
+          ErrorCode.RESOURCE_NOT_FOUND,
+        );
+      }
+
+      return {
+        availability: {
+          isAvailable: vendor.isAvailable !== false,
+          openingHours: vendor.openingHours,
+          isOpenNow: isVendorOpenAt(vendor.openingHours),
+          isReceivingOrders: isVendorReceivingOrders(vendor),
+          approvalStatus: vendor.approvalStatus,
+        },
+      };
     },
   );
 

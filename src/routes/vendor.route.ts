@@ -6,7 +6,10 @@ import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
 import { optionalAuthMiddleware } from "../middlewares/optional-auth.middleware.js";
 import { zodValidation } from "../middlewares/validation.js";
-import { updateVendorProfileSchema } from "../zod-schema/vendor.schema.js";
+import {
+  updateVendorAvailabilitySchema,
+  updateVendorProfileSchema,
+} from "../zod-schema/vendor.schema.js";
 import { uploadBusinessLogo } from "../middlewares/file-upload.middleware.js";
 import { uploadBusinessLogoToCloudinary } from "../middlewares/cloudinary-upload.middleware.js";
 
@@ -89,6 +92,53 @@ import { uploadBusinessLogoToCloudinary } from "../middlewares/cloudinary-upload
  *           application/json:
  *             schema:
  *               $ref: "#/components/responses/500"
+ */
+
+/**
+ * @swagger
+ * /api/v1/vendors/me/availability:
+ *   get:
+ *     summary: Get vendor availability settings
+ *     tags: [Vendor]
+ *     responses:
+ *       "200":
+ *         description: Vendor availability fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/VendorAvailability"
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ *   put:
+ *     summary: Update vendor availability settings
+ *     tags: [Vendor]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               isAvailable: { type: boolean }
+ *               openingHours:
+ *                 $ref: "#/components/schemas/VendorOpeningHours"
+ *     responses:
+ *       "200":
+ *         description: Vendor availability updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/VendorAvailability"
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
  */
 
 /**
@@ -363,6 +413,12 @@ class VendorRouter {
       roleGuardMiddleware(["vendor"]),
       this.vendorController.getVendorProfile,
     );
+    this.router.get(
+      "/me/availability",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      this.vendorController.getVendorAvailability,
+    );
     this.router.put(
       "/me",
       authMiddleware,
@@ -371,6 +427,13 @@ class VendorRouter {
       uploadBusinessLogoToCloudinary,
       zodValidation(updateVendorProfileSchema),
       this.vendorController.updateVendorProfile,
+    );
+    this.router.put(
+      "/me/availability",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      zodValidation(updateVendorAvailabilitySchema),
+      this.vendorController.updateVendorAvailability,
     );
     this.router.put(
       "/approve/:id",

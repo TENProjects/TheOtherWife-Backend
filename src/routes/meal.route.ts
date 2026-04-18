@@ -134,8 +134,6 @@ import {
  *               description: { type: string }
  *               price: { type: number }
  *               categoryName: { type: string }
- *               availableFrom: { type: string }
- *               availableUntil: { type: string }
  *               primaryImageUrl: { type: string }
  *               primaryImage:
  *                 type: string
@@ -153,8 +151,7 @@ import {
  *               servingSize: { type: string }
  *               additionalData: { type: string }
  *               isAvailable:
- *                 type: string
- *                 enum: [pending, available, unavailable]
+ *                 type: boolean
  *     responses:
  *       200:
  *         description: Meal updated successfully
@@ -236,15 +233,11 @@ import {
  *               - description
  *               - price
  *               - categoryName
- *               - availableFrom
- *               - availableUntil
  *             properties:
  *               name: { type: string }
  *               description: { type: string }
  *               price: { type: number }
  *               categoryName: { type: string }
- *               availableFrom: { type: string }
- *               availableUntil: { type: string }
  *               primaryImageUrl: { type: string }
  *               primaryImage:
  *                 type: string

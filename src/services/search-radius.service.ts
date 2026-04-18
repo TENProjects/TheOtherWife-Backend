@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import Address from "../models/address.model.js";
 import Customer from "../models/customer.model.js";
 import Vendor from "../models/vendor.model.js";
+import { isVendorReceivingOrders } from "../util/vendor-opening-hours.util.js";
 
 type SearchRadiusContext = {
   strategy: "same_city_placeholder" | "none";
@@ -67,10 +68,15 @@ export class SearchRadiusService {
       country: customerAddress.country,
     }).distinct("_id");
 
-    const nearbyVendorIds = await Vendor.find({
+    const nearbyVendors = await Vendor.find({
       approvalStatus: "approved",
+      isAvailable: { $ne: false },
       addressId: { $in: nearbyAddressIds },
-    }).distinct("_id");
+    }).select("_id openingHours");
+
+    const nearbyVendorIds = nearbyVendors
+      .filter((vendor) => isVendorReceivingOrders(vendor))
+      .map((vendor) => vendor._id);
 
     return {
       strategy: "same_city_placeholder",

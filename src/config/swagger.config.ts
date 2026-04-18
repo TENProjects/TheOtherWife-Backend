@@ -79,13 +79,9 @@ const swaggerDefinition = {
             type: "string",
             description: "The category name of the meal",
           },
-          availableFrom: {
-            type: "string",
-            description: "The date the meal is available from",
-          },
-          availableUntil: {
-            type: "string",
-            description: "The date the meal is available until",
+          isAvailable: {
+            type: "boolean",
+            description: "Whether the meal is currently available",
           },
           primaryImageUrl: {
             type: "string",
@@ -163,6 +159,29 @@ const swaggerDefinition = {
           approvalStatus: {
             $ref: "#/components/schemas/VendorApprovalStatus",
           },
+          isAvailable: {
+            type: "boolean",
+            description: "Whether the vendor is currently available",
+          },
+          isReceivingOrders: {
+            type: "boolean",
+            description:
+              "Calculated field: true when approved, available, and currently within opening hours",
+          },
+          openingHours: {
+            type: "object",
+            description:
+              "Weekly opening hours with monday to sunday keys; each day includes isOpen, openTime, closeTime",
+            properties: {
+              monday: { $ref: "#/components/schemas/DailyOpeningHours" },
+              tuesday: { $ref: "#/components/schemas/DailyOpeningHours" },
+              wednesday: { $ref: "#/components/schemas/DailyOpeningHours" },
+              thursday: { $ref: "#/components/schemas/DailyOpeningHours" },
+              friday: { $ref: "#/components/schemas/DailyOpeningHours" },
+              saturday: { $ref: "#/components/schemas/DailyOpeningHours" },
+              sunday: { $ref: "#/components/schemas/DailyOpeningHours" },
+            },
+          },
           approvedBy: {
             type: "string",
             description: "The vendor approved by",
@@ -208,6 +227,54 @@ const swaggerDefinition = {
           comment: {
             type: "string",
             description: "Optional review comment",
+          },
+        },
+      },
+      DailyOpeningHours: {
+        type: "object",
+        properties: {
+          isOpen: {
+            type: "boolean",
+          },
+          openTime: {
+            type: "string",
+            example: "09:00",
+          },
+          closeTime: {
+            type: "string",
+            example: "18:00",
+          },
+        },
+      },
+      VendorOpeningHours: {
+        type: "object",
+        properties: {
+          monday: { $ref: "#/components/schemas/DailyOpeningHours" },
+          tuesday: { $ref: "#/components/schemas/DailyOpeningHours" },
+          wednesday: { $ref: "#/components/schemas/DailyOpeningHours" },
+          thursday: { $ref: "#/components/schemas/DailyOpeningHours" },
+          friday: { $ref: "#/components/schemas/DailyOpeningHours" },
+          saturday: { $ref: "#/components/schemas/DailyOpeningHours" },
+          sunday: { $ref: "#/components/schemas/DailyOpeningHours" },
+        },
+      },
+      VendorAvailability: {
+        type: "object",
+        properties: {
+          isAvailable: {
+            type: "boolean",
+          },
+          isOpenNow: {
+            type: "boolean",
+          },
+          isReceivingOrders: {
+            type: "boolean",
+          },
+          approvalStatus: {
+            $ref: "#/components/schemas/VendorApprovalStatus",
+          },
+          openingHours: {
+            $ref: "#/components/schemas/VendorOpeningHours",
           },
         },
       },

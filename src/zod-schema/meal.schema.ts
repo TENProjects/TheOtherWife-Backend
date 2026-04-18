@@ -53,8 +53,6 @@ export const createMealSchema = z.object({
   description: z.string().trim().min(1),
   price: z.coerce.number().positive(),
   categoryName: z.string().trim().min(1),
-  availableFrom: z.string().trim().min(1),
-  availableUntil: z.string().trim().min(1),
   primaryImageUrl: cloudinaryAssetUrlSchema.optional(),
   tags: z.preprocess(parseStringArrayField, nonEmptyStringArraySchema).default([]),
 });
@@ -65,8 +63,6 @@ export const updateMealSchema = z
     description: z.string().trim().min(1).optional(),
     price: z.coerce.number().positive().optional(),
     categoryName: z.string().trim().min(1).optional(),
-    availableFrom: z.string().trim().min(1).optional(),
-    availableUntil: z.string().trim().min(1).optional(),
     primaryImageUrl: cloudinaryAssetUrlSchema.optional(),
     additionalImages: z
       .preprocess(parseStringArrayField, z.array(cloudinaryAssetUrlSchema))
@@ -75,7 +71,7 @@ export const updateMealSchema = z
     preparationTime: z.coerce.number().int().min(0).optional(),
     servingSize: z.string().trim().min(1).optional(),
     additionalData: z.string().trim().optional(),
-    isAvailable: z.enum(["pending", "available", "unavailable"]).optional(),
+    isAvailable: z.coerce.boolean().optional(),
   })
   .refine(
     (value) => Object.values(value).some((field) => field !== undefined),

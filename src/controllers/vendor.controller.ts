@@ -5,6 +5,7 @@ import { handleAsyncControl } from "../middlewares/handle-async-control.middlewa
 import { VendorService } from "../services/vendor.service.js";
 import type { Request, Response } from "express";
 import { ApiResponse } from "../util/response.util.js";
+import type { VendorOpeningHours } from "../util/vendor-opening-hours.util.js";
 
 export class VendorController {
   vendorService: VendorService;
@@ -75,7 +76,6 @@ export class VendorController {
       >,
       res: Response,
     ): Promise<Response> => {
-      const vendorId = req.params.id;
       const userId = req?.user?._id as unknown as string;
 
       const {
@@ -104,6 +104,45 @@ export class VendorController {
       } catch (error) {
         throw error;
       }
+    },
+  );
+
+  getVendorAvailability = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const userId = req?.user?._id as unknown as string;
+      const availability = await this.vendorService.getVendorAvailability(userId);
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Vendor availability fetched successfully",
+        data: availability,
+      } as ApiResponse);
+    },
+  );
+
+  updateVendorAvailability = handleAsyncControl(
+    async (
+      req: Request<
+        {},
+        {},
+        {
+          isAvailable?: boolean;
+          openingHours?: VendorOpeningHours;
+        }
+      >,
+      res: Response,
+    ): Promise<Response> => {
+      const userId = req?.user?._id as unknown as string;
+      const availability = await this.vendorService.updateVendorAvailability(
+        userId,
+        req.body,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Vendor availability updated successfully",
+        data: availability,
+      } as ApiResponse);
     },
   );
 

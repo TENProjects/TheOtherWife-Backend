@@ -15,6 +15,7 @@ import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { transaction } from "../util/transaction.util.js";
 import { PaymentService } from "./payment.service.js";
+import { isVendorReceivingOrders } from "../util/vendor-opening-hours.util.js";
 
 type CheckoutPaymentProvider = "paystack" | "cash" | "wallet";
 
@@ -43,6 +44,8 @@ type CheckoutPreviewResult = {
     id: string;
     businessName?: string;
     approvalStatus: string;
+    isAvailable: boolean;
+    isReceivingOrders: boolean;
   };
   address: {
     id: string;
@@ -101,7 +104,7 @@ export class CheckoutService {
     const mealsQuery = Meal.find({
       _id: { $in: mealIds },
       isDeleted: false,
-      isAvailable: "available",
+      isAvailable: true,
     });
     session && mealsQuery.session(session);
     const meals = await mealsQuery;
@@ -161,9 +164,9 @@ export class CheckoutService {
       );
     }
 
-    if (vendor.approvalStatus !== "approved") {
+    if (!isVendorReceivingOrders(vendor)) {
       throw new BadRequestException(
-        "Vendor is not available for checkout",
+        "Vendor is not receiving orders right now",
         HttpStatus.BAD_REQUEST,
         ErrorCode.VALIDATION_ERROR,
       );
@@ -201,6 +204,8 @@ export class CheckoutService {
         id: vendor._id.toString(),
         businessName: vendor.businessName,
         approvalStatus: vendor.approvalStatus,
+        isAvailable: vendor.isAvailable !== false,
+        isReceivingOrders: isVendorReceivingOrders(vendor),
       },
       address: {
         id: address._id.toString(),

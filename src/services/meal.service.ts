@@ -11,6 +11,7 @@ import Vendor from "../models/vendor.model.js";
 import MealCategory from "../models/mealCategory.model.js";
 import { transaction } from "../util/transaction.util.js";
 import { SearchRadiusService } from "./search-radius.service.js";
+import { isVendorReceivingOrders } from "../util/vendor-opening-hours.util.js";
 import Order from "../models/order.model.js";
 import MealReview from "../models/mealReview.model.js";
 
@@ -161,8 +162,6 @@ export class MealService {
         description: string;
         price: number;
         categoryName: string;
-        availableFrom: string;
-        availableUntil: string;
         primaryImageUrl: string;
         tags: string[];
       },
@@ -172,8 +171,6 @@ export class MealService {
         description,
         price,
         categoryName,
-        availableFrom,
-        availableUntil,
         primaryImageUrl,
         tags,
       } = mealData;
@@ -210,8 +207,6 @@ export class MealService {
             categoryId,
             description,
             price,
-            availableFrom,
-            availableUntil,
             primaryImageUrl,
             tags,
           },
@@ -241,15 +236,13 @@ export class MealService {
         description?: string;
         price?: number;
         categoryName?: string;
-        availableFrom?: string;
-        availableUntil?: string;
         primaryImageUrl?: string;
         additionalImages?: string[];
         tags?: string[];
         preparationTime?: number;
         servingSize?: string;
         additionalData?: string;
-        isAvailable?: "pending" | "available" | "unavailable";
+        isAvailable?: boolean;
       },
     ) => {
       if (!mealId) {
@@ -304,10 +297,6 @@ export class MealService {
       if (mealData.description !== undefined)
         meal.description = mealData.description;
       if (mealData.price !== undefined) meal.price = mealData.price;
-      if (mealData.availableFrom !== undefined)
-        meal.availableFrom = mealData.availableFrom;
-      if (mealData.availableUntil !== undefined)
-        meal.availableUntil = mealData.availableUntil as unknown as Date;
       if (mealData.primaryImageUrl !== undefined)
         meal.primaryImageUrl = mealData.primaryImageUrl;
       if (mealData.additionalImages !== undefined)
@@ -356,7 +345,7 @@ export class MealService {
         {
           $set: {
             isDeleted: true,
-            isAvailable: "unavailable",
+            isAvailable: false,
           },
         },
         { new: true },
@@ -390,15 +379,28 @@ export class MealService {
     const skip = (pageNumber - 1) * pageSize;
     const { vendorIds } =
       await this.searchRadiusService.getVendorSearchContext(customerUserId);
+    const activeVendors = await Vendor.find({
+      approvalStatus: "approved",
+      isAvailable: { $ne: false },
+    }).select("_id openingHours approvalStatus isAvailable");
+    const activeVendorIds = activeVendors
+      .filter((vendor) => isVendorReceivingOrders(vendor))
+      .map((vendor) => vendor._id);
 
     const query: Record<string, any> = {
       isDeleted: false,
-      isAvailable: "available",
+      isAvailable: true,
+      vendorId: {
+        $in: vendorIds
+          ? activeVendorIds.filter((vendorId) =>
+              vendorIds.some(
+                (contextVendorId) =>
+                  contextVendorId.toString() === vendorId.toString(),
+              ),
+            )
+          : activeVendorIds,
+      },
     };
-
-    if (vendorIds) {
-      query.vendorId = { $in: vendorIds };
-    }
 
     if (search) {
       query.$or = [
@@ -489,7 +491,7 @@ export class MealService {
     const query: Record<string, any> = {
       _id: mealId as unknown as mongoose.Types.ObjectId,
       isDeleted: false,
-      isAvailable: "available",
+      isAvailable: true,
     };
 
     const meal = await Meal.findOne(query)
@@ -512,6 +514,14 @@ export class MealService {
     const vendorDocument = meal.vendorId as any;
     const categoryDocument = meal.categoryId as any;
 
+    if (!isVendorReceivingOrders(vendorDocument)) {
+      throw new NotFoundException(
+        "Meal not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
     return {
       meal: {
         _id: meal._id,
@@ -520,8 +530,6 @@ export class MealService {
         description: meal.description,
         price: meal.price,
         isAvailable: meal.isAvailable,
-        availableFrom: meal.availableFrom,
-        availableUntil: meal.availableUntil,
         primaryImageUrl: meal.primaryImageUrl,
         additionalImages: meal.additionalImages,
         tags: meal.tags,
