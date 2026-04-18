@@ -50,45 +50,13 @@ export class SearchRadiusService {
   };
 
   getVendorSearchContext = async (
-    userId?: string,
+    _userId?: string,
   ): Promise<SearchRadiusContext> => {
-    const customerAddress = await this.resolveActiveCustomerAddress(userId);
-
-    if (!customerAddress) {
-      return {
-        strategy: "none",
-        customerAddress: null,
-        vendorIds: null,
-      };
-    }
-
-    const nearbyAddressIds = await Address.find({
-      city: customerAddress.city,
-      state: customerAddress.state,
-      country: customerAddress.country,
-    }).distinct("_id");
-
-    const nearbyVendors = await Vendor.find({
-      approvalStatus: "approved",
-      isAvailable: { $ne: false },
-      addressId: { $in: nearbyAddressIds },
-    }).select("_id openingHours");
-
-    const nearbyVendorIds = nearbyVendors
-      .filter((vendor) => isVendorReceivingOrders(vendor))
-      .map((vendor) => vendor._id);
-
+    // Temporarily disabled: keep service contract without applying radius filters.
     return {
-      strategy: "same_city_placeholder",
-      customerAddress: {
-        id: customerAddress._id.toString(),
-        city: customerAddress.city,
-        state: customerAddress.state,
-        country: customerAddress.country,
-        latitude: customerAddress.latitude,
-        longitude: customerAddress.longitude,
-      },
-      vendorIds: nearbyVendorIds as mongoose.Types.ObjectId[],
+      strategy: "none",
+      customerAddress: null,
+      vendorIds: null,
     };
   };
 }
