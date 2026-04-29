@@ -55,6 +55,7 @@ export const createMealSchema = z.object({
   categoryName: z.string().trim().min(1),
   primaryImageUrl: cloudinaryAssetUrlSchema.optional(),
   tags: z.preprocess(parseStringArrayField, nonEmptyStringArraySchema).default([]),
+  publicationStatus: z.enum(["draft", "published"]).optional(),
 });
 
 export const updateMealSchema = z
@@ -72,6 +73,7 @@ export const updateMealSchema = z
     servingSize: z.string().trim().min(1).optional(),
     additionalData: z.string().trim().optional(),
     isAvailable: z.coerce.boolean().optional(),
+    publicationStatus: z.enum(["draft", "published"]).optional(),
   })
   .refine(
     (value) => Object.values(value).some((field) => field !== undefined),

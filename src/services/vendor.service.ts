@@ -26,8 +26,6 @@ export class VendorService {
     this.searchRadiusService = new SearchRadiusService();
   }
 
-  private featuredVendorMinimumReviews = 5;
-
   getFeaturedVendors = async (customerUserId?: string, limit?: number) => {
     const normalizedLimit = Math.min(Math.max(limit ?? 6, 1), 20);
     const { vendorIds, strategy, customerAddress } =
@@ -36,7 +34,6 @@ export class VendorService {
     const query: Record<string, any> = {
       approvalStatus: "approved",
       isAvailable: { $ne: false },
-      ratingCount: { $gte: this.featuredVendorMinimumReviews },
     };
 
     if (vendorIds) {
@@ -111,7 +108,6 @@ export class VendorService {
       vendors: rankedVendors,
       meta: {
         limit: normalizedLimit,
-        minimumReviews: this.featuredVendorMinimumReviews,
         searchRadius: {
           strategy,
           customerAddress,

@@ -11,6 +11,7 @@ export interface MealDocument extends Document {
   price: number;
   imageUrl: string;
   isAvailable: boolean;
+  publicationStatus: "draft" | "published";
   primaryImageUrl: string;
   additionalImages: Array<string>;
   tags: Array<string>;
@@ -52,6 +53,12 @@ const MealSchema = new Schema({
   isAvailable: {
     type: Boolean,
     default: false,
+  },
+  publicationStatus: {
+    type: String,
+    enum: ["draft", "published"],
+    required: true,
+    default: "draft",
   },
   primaryImageUrl: {
     type: String,

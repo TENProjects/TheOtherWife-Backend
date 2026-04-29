@@ -22,7 +22,7 @@ import {
  * @swagger
  * /api/v1/meals:
  *   get:
- *     summary: Get meals by query
+ *     summary: Get published meals by query
  *     tags: [Meal]
  *     parameters:
  *       - name: search
@@ -150,6 +150,9 @@ import {
  *               preparationTime: { type: number }
  *               servingSize: { type: string }
  *               additionalData: { type: string }
+ *               publicationStatus:
+ *                 type: string
+ *                 enum: [draft, published]
  *               isAvailable:
  *                 type: boolean
  *     responses:
@@ -251,6 +254,9 @@ import {
  *                 type: array
  *                 items:
  *                   type: string
+ *               publicationStatus:
+ *                 type: string
+ *                 enum: [draft, published]
  *     responses:
  *       201:
  *         description: Meal created successfully

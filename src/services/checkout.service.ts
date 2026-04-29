@@ -123,6 +123,7 @@ export class CheckoutService {
     const mealsQuery = Meal.find({
       _id: { $in: mealIds },
       isDeleted: false,
+      publicationStatus: "published",
       isAvailable: true,
     });
     session && mealsQuery.session(session);

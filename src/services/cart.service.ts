@@ -65,7 +65,12 @@ class CartBase {
       );
     }
 
-    const meal = await Meal.findById(mealId).session(session);
+    const meal = await Meal.findOne({
+      _id: mealId,
+      isDeleted: false,
+      publicationStatus: "published",
+      isAvailable: true,
+    }).session(session);
 
     if (!meal) {
       throw new NotFoundException(

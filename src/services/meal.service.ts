@@ -164,6 +164,7 @@ export class MealService {
         categoryName: string;
         primaryImageUrl: string;
         tags: string[];
+        publicationStatus?: "draft" | "published";
       },
     ) => {
       const {
@@ -173,6 +174,7 @@ export class MealService {
         categoryName,
         primaryImageUrl,
         tags,
+        publicationStatus,
       } = mealData;
 
       const vendor = await Vendor.findOne({ userId }).session(session);
@@ -209,6 +211,7 @@ export class MealService {
             price,
             primaryImageUrl,
             tags,
+            publicationStatus: publicationStatus ?? "draft",
           },
         ],
         { session },
@@ -243,6 +246,7 @@ export class MealService {
         servingSize?: string;
         additionalData?: string;
         isAvailable?: boolean;
+        publicationStatus?: "draft" | "published";
       },
     ) => {
       if (!mealId) {
@@ -310,6 +314,8 @@ export class MealService {
         meal.additionalData = mealData.additionalData;
       if (mealData.isAvailable !== undefined)
         meal.isAvailable = mealData.isAvailable;
+      if (mealData.publicationStatus !== undefined)
+        meal.publicationStatus = mealData.publicationStatus;
 
       await meal.save({ session });
 
@@ -389,7 +395,7 @@ export class MealService {
 
     const query: Record<string, any> = {
       isDeleted: false,
-      isAvailable: true,
+      publicationStatus: "published",
       vendorId: {
         $in: vendorIds
           ? activeVendorIds.filter((vendorId) =>
@@ -491,7 +497,7 @@ export class MealService {
     const query: Record<string, any> = {
       _id: mealId as unknown as mongoose.Types.ObjectId,
       isDeleted: false,
-      isAvailable: true,
+      publicationStatus: "published",
     };
 
     const meal = await Meal.findOne(query)
@@ -529,6 +535,7 @@ export class MealService {
         categoryName: meal.categoryName,
         description: meal.description,
         price: meal.price,
+        publicationStatus: meal.publicationStatus,
         isAvailable: meal.isAvailable,
         primaryImageUrl: meal.primaryImageUrl,
         additionalImages: meal.additionalImages,
@@ -593,6 +600,7 @@ export class MealService {
       const meal = await Meal.findOne({
         _id: mealId,
         isDeleted: false,
+        publicationStatus: "published",
       }).session(session);
 
       if (!meal) {

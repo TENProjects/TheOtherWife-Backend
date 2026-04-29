@@ -79,9 +79,16 @@ const swaggerDefinition = {
             type: "string",
             description: "The category name of the meal",
           },
+          publicationStatus: {
+            type: "string",
+            enum: ["draft", "published"],
+            description:
+              "Publishing state for storefront visibility. Draft meals are hidden from public listings.",
+          },
           isAvailable: {
             type: "boolean",
-            description: "Whether the meal is currently available",
+            description:
+              "Whether the meal can currently be ordered. Published meals can still be listed when unavailable.",
           },
           primaryImageUrl: {
             type: "string",
