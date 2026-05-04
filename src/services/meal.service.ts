@@ -388,13 +388,12 @@ export class MealService {
     const activeVendors = await Vendor.find({
       approvalStatus: "approved",
       isAvailable: { $ne: false },
-    }).select("_id openingHours approvalStatus isAvailable");
-    const activeVendorIds = activeVendors
-      .filter((vendor) => isVendorReceivingOrders(vendor))
-      .map((vendor) => vendor._id);
+    }).select("_id");
+    const activeVendorIds = activeVendors.map((vendor) => vendor._id);
 
     const query: Record<string, any> = {
       isDeleted: false,
+      isAvailable: true,
       publicationStatus: "published",
       vendorId: {
         $in: vendorIds

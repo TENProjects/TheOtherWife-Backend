@@ -9,6 +9,7 @@ import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { UnauthorizedExceptionError } from "../errors/unauthorized-exception.error.js";
 import { transaction } from "../util/transaction.util.js";
 import Vendor from "../models/vendor.model.js";
+import Customer from "../models/customer.model.js";
 
 export class UserService {
   getCurrentUser = async (userId: string) => {
@@ -30,13 +31,24 @@ export class UserService {
       );
     }
 
-    return { user };
+    let address = null;
+
+    if (user.userType === "customer") {
+      const customer = await Customer.findOne({ userId: user._id }).populate("addressId");
+      address = customer?.addressId ?? null;
+    }
+
+    if (user.userType === "vendor") {
+      const vendor = await Vendor.findOne({ userId: user._id }).populate("addressId");
+      address = vendor?.addressId ?? null;
+    }
+
+    return { user, address };
   };
 
   getAllUsers = async () => {
     const users = await User.find()
       .select("-passwordHash")
-      .populate("addressId")
       .sort({ createdAt: -1 })
       .limit(10);
 
