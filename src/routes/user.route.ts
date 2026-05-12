@@ -8,6 +8,7 @@ import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { zodValidation } from "../middlewares/validation.js";
 import {
   closeCurrentUserAccountSchema,
+  createAdminUserSchema,
   updateUserStatusSchema,
 } from "../zod-schema/user.schema.js";
 
@@ -138,6 +139,36 @@ import {
 
 /**
  * @swagger
+ * /api/v1/users/customers:
+ *   get:
+ *     summary: Get all customers with profile details (admin)
+ *     tags: [User]
+ *     responses:
+ *       "200":
+ *         description: Customers fetched successfully
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+
+/**
+ * @swagger
+ * /api/v1/users/vendors:
+ *   get:
+ *     summary: Get all vendors with profile details (admin)
+ *     tags: [User]
+ *     responses:
+ *       "200":
+ *         description: Vendors fetched successfully
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+
+/**
+ * @swagger
  * /api/v1/users/{userId}/status:
  *   patch:
  *     summary: Update a user's account status (admin)
@@ -193,6 +224,34 @@ import {
  *               $ref: "#/components/responses/500"
  */
 
+/**
+ * @swagger
+ * /api/v1/users/admins:
+ *   post:
+ *     summary: Create a new admin user (admin only)
+ *     tags: [User]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [firstName, lastName, email, password, phoneNumber]
+ *             properties:
+ *               firstName: { type: string }
+ *               lastName: { type: string }
+ *               email: { type: string, format: email }
+ *               password: { type: string, format: password }
+ *               phoneNumber: { type: string }
+ *     responses:
+ *       "201":
+ *         description: Admin user created successfully
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+
 class UserRouter {
   userController: UserController;
   router: Router;
@@ -223,12 +282,28 @@ class UserRouter {
       roleGuardMiddleware(["admin"]),
       this.userController.getAllUsers,
     );
-
+    this.router.get(
+      "/customers",
+      roleGuardMiddleware(["admin"]),
+      this.userController.getAllCustomers,
+    );
+    this.router.get(
+      "/vendors",
+      roleGuardMiddleware(["admin"]),
+      this.userController.getAllVendors,
+    );
     this.router.patch(
       "/:userId/status",
       roleGuardMiddleware(["admin"]),
       zodValidation(updateUserStatusSchema),
       this.userController.updateUserStatus,
+    );
+
+    this.router.post(
+      "/admins",
+      roleGuardMiddleware(["admin"]),
+      zodValidation(createAdminUserSchema),
+      this.userController.createAdminUser,
     );
   }
 }

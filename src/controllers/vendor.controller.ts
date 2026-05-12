@@ -60,6 +60,18 @@ export class VendorController {
     },
   );
 
+  getPublicVendorDetails = handleAsyncControl(
+    async (req: Request<{ id: string }>, res: Response): Promise<Response> => {
+      const vendorId = req.params.id;
+      const vendor = await this.vendorService.getPublicVendorDetails(vendorId);
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        data: vendor,
+      } as ApiResponse);
+    },
+  );
+
   updateVendorProfile = handleAsyncControl(
     async (
       req: Request<

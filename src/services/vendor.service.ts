@@ -1,6 +1,7 @@
 /** @format */
 
 import { HttpStatus } from "../config/http.config.js";
+import mongoose, { ClientSession } from "mongoose";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
 import { UnauthorizedExceptionError } from "../errors/unauthorized-exception.error.js";
@@ -9,9 +10,9 @@ import Order from "../models/order.model.js";
 import User from "../models/user.model.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { transaction } from "../util/transaction.util.js";
-import { ClientSession } from "mongoose";
 import { SearchRadiusService } from "./search-radius.service.js";
 import MealReview from "../models/mealReview.model.js";
+import Meal from "../models/meal.model.js";
 import {
   isVendorOpenAt,
   isVendorReceivingOrders,
@@ -143,6 +144,91 @@ export class VendorService {
     });
 
     return { vendor };
+  };
+
+  getPublicVendorDetails = async (vendorId: string) => {
+    if (!vendorId) {
+      throw new BadRequestException(
+        "Vendor ID is required",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    if (!mongoose.isValidObjectId(vendorId)) {
+      throw new BadRequestException(
+        "Invalid vendor ID",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const vendor = await Vendor.findOne({
+      _id: vendorId,
+      approvalStatus: "approved",
+    })
+      .select(
+        "businessName businessDescription businessLogoUrl approvalStatus isAvailable openingHours addressId ratingAverage ratingCount ratingScore additionalData",
+      )
+      .populate(
+        "addressId",
+        "address city state country postalCode latitude longitude",
+      );
+
+    if (!vendor) {
+      throw new NotFoundException(
+        "Vendor not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    const meals = await Meal.find({
+      vendorId: vendor._id,
+      publicationStatus: "published",
+      isAvailable: true,
+      isDeleted: false,
+    })
+      .select(
+        "_id name description price categoryName primaryImageUrl additionalImages preparationTime servingSize tags ratingAverage ratingCount",
+      )
+      .sort({ categoryName: 1, name: 1 });
+
+    const additionalData = (vendor.additionalData ?? {}) as Record<string, any>;
+    const bannerImageUrl =
+      additionalData?.documents?.displayImage?.fileUrl ??
+      additionalData?.documents?.displayImage?.url ??
+      null;
+
+    return {
+      vendor: {
+        _id: vendor._id,
+        businessName: vendor.businessName,
+        about: vendor.businessDescription ?? "",
+        logoUrl: vendor.businessLogoUrl ?? null,
+        bannerImageUrl,
+        ratingAverage: vendor.ratingAverage,
+        ratingCount: vendor.ratingCount,
+        ratingScore: vendor.ratingScore,
+        address: vendor.addressId,
+      },
+      availability: {
+        isAvailable: vendor.isAvailable !== false,
+        openingHours: vendor.openingHours,
+        isOpenNow: isVendorOpenAt(vendor.openingHours),
+        isReceivingOrders: isVendorReceivingOrders(vendor),
+      },
+      meals: {
+        items: meals.map((meal) => {
+          const mealObject = meal.toObject();
+          return {
+            ...mealObject,
+            category: mealObject.categoryName || "Other",
+          };
+        }),
+        total: meals.length,
+      },
+    };
   };
 
   getVendorReviews = async (userId: string) => {

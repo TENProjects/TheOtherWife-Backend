@@ -36,6 +36,29 @@ import { uploadBusinessLogoToCloudinary } from "../middlewares/cloudinary-upload
 
 /**
  * @swagger
+ * /api/v1/vendors/{id}:
+ *   get:
+ *     summary: Get a vendor public details by ID
+ *     tags: [Vendor]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       "200":
+ *         description: Vendor public details fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
  * /api/v1/vendors/me/reviews:
  *   get:
  *     summary: Get current vendor reviews
@@ -435,6 +458,7 @@ class VendorRouter {
       zodValidation(updateVendorAvailabilitySchema),
       this.vendorController.updateVendorAvailability,
     );
+    this.router.get("/:id", this.vendorController.getPublicVendorDetails);
     this.router.put(
       "/approve/:id",
       authMiddleware,

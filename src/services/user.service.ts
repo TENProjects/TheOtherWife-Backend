@@ -10,6 +10,7 @@ import { UnauthorizedExceptionError } from "../errors/unauthorized-exception.err
 import { transaction } from "../util/transaction.util.js";
 import Vendor from "../models/vendor.model.js";
 import Customer from "../models/customer.model.js";
+import Order from "../models/order.model.js";
 
 export class UserService {
   getCurrentUser = async (userId: string) => {
@@ -61,6 +62,128 @@ export class UserService {
     }
 
     return users;
+  };
+
+  getAllCustomers = async () => {
+    const customers = await Customer.find()
+      .populate("userId", "-passwordHash")
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    return customers;
+  };
+
+  getAllVendors = async () => {
+    const vendors = await Vendor.find()
+      .populate("userId", "-passwordHash")
+      .populate("addressId")
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    return vendors.map((vendor) => {
+      const vendorObject = vendor.toObject();
+      return {
+        ...vendorObject,
+        ratingSummary: {
+          ratingAverage: vendorObject.ratingAverage ?? 0,
+          ratingCount: vendorObject.ratingCount ?? 0,
+          ratingScore: vendorObject.ratingScore ?? 0,
+        },
+      };
+    });
+  };
+
+  getAdminAnalytics = async () => {
+    const [
+      totalCustomers,
+      totalOrders,
+      revenueAggregation,
+      vendorStatusAggregation,
+    ] = await Promise.all([
+      User.countDocuments({
+        userType: "customer",
+        status: { $ne: "deleted" },
+      }),
+      Order.countDocuments(),
+      Order.aggregate<{ _id: null; totalRevenue: number }>([
+        {
+          $match: {
+            paymentStatus: "succeeded",
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: "$totalAmount" },
+          },
+        },
+      ]),
+      Vendor.aggregate<{ _id: string; count: number }>([
+        {
+          $group: {
+            _id: "$approvalStatus",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    const vendorBreakdown = {
+      total: 0,
+      pending: 0,
+      approved: 0,
+      suspended: 0,
+      rejected: 0,
+    };
+
+    vendorStatusAggregation.forEach((entry) => {
+      const key = entry._id as keyof typeof vendorBreakdown;
+      if (key in vendorBreakdown) {
+        vendorBreakdown[key] = entry.count;
+        vendorBreakdown.total += entry.count;
+      }
+    });
+
+    return {
+      totalCustomers,
+      totalOrders,
+      totalRevenue: revenueAggregation[0]?.totalRevenue ?? 0,
+      vendors: vendorBreakdown,
+    };
+  };
+
+  getAdminOrderAnalytics = async () => {
+    const [statusBreakdown, paymentStatusBreakdown] = await Promise.all([
+      Order.aggregate<{ _id: string; count: number }>([
+        {
+          $group: {
+            _id: "$status",
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+      Order.aggregate<{ _id: string; count: number }>([
+        {
+          $group: {
+            _id: "$paymentStatus",
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+    ]);
+
+    return {
+      orderCategories: statusBreakdown.map((entry) => ({
+        category: entry._id,
+        count: entry.count,
+      })),
+      paymentStatusBreakdown: paymentStatusBreakdown.map((entry) => ({
+        status: entry._id,
+        count: entry.count,
+      })),
+    };
   };
 
   closeCurrentUserAccount = transaction.use(

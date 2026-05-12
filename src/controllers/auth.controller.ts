@@ -9,7 +9,6 @@ import { HttpStatus } from "../config/http.config.js";
 
 import { nodeEnv } from "../constants/env.js";
 import { ApiResponse } from "../util/response.util.js";
-import { CreateProfile } from "../dispatcher/profile.dispatcher.js";
 
 export class AuthController {
   authService: AuthService;
@@ -38,9 +37,7 @@ export class AuthController {
         req.body;
 
       try {
-        const handleSignup = this.authService.signup([
-          userType as keyof typeof CreateProfile,
-        ]);
+        const handleSignup = this.authService.signup(["customer", "vendor"]);
 
         const { accessToken, refreshToken, ...userWithoutPassword } =
           await handleSignup({

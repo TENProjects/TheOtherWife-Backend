@@ -27,7 +27,7 @@ import { zodValidation } from "../middlewares/validation.js";
  *               lastName: { type: string }
  *               email: { type: string, format: email }
  *               password: { type: string, format: password }
- *               userType: { type: string, enum: [customer, vendor, admin] }
+ *               userType: { type: string, enum: [customer, vendor] }
  *               phoneNumber: { type: string }
  *     responses:
  *       "200":

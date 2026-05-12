@@ -12,9 +12,18 @@ export const statusCheck =
     try {
       const userId = req?.user?._id;
       const vendor = await Vendor.findOne({ userId });
-      if (!status.includes(vendor?.approvalStatus as string)) {
+      const approvalStatus = vendor?.approvalStatus as string | undefined;
+
+      if (!approvalStatus || !status.includes(approvalStatus)) {
+        const statusMessageMap: Record<string, string> = {
+          pending: "Awaiting approval: profile cannot perform this action",
+          suspended: "Profile suspended: profile cannot perform this action",
+          rejected: "Profile rejected: profile cannot perform this action",
+        };
+
         throw new BadRequestException(
-          "Suspended: profile cannot perform this action",
+          statusMessageMap[approvalStatus ?? ""] ??
+            "Profile status does not allow this action",
           HttpStatus.BAD_REQUEST,
           ErrorCode.VALIDATION_ERROR,
         );

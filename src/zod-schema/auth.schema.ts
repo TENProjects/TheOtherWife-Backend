@@ -11,7 +11,7 @@ export const registerUserSchema = z
     lastName: z.string().trim().min(1),
     email: emailSchema,
     password: z.string().trim().min(8),
-    userType: z.enum(["customer", "vendor", "admin"]),
+    userType: z.enum(["customer", "vendor"]),
     phoneNumber: phoneNumberSchema,
   })
   .refine((data) => data.email && data.phoneNumber, {
