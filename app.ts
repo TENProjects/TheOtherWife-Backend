@@ -44,15 +44,15 @@ export class App {
   }
 
   initiializeMiddlewares() {
-    this.app.use(
-      cors({
-        origin: corsOrigin?.length ? corsOrigin : true,
-        credentials: true,
-        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Authorization"],
-      }),
-    );
-    this.app.options("*", cors());
+    const corsOptions = {
+      origin: corsOrigin?.length ? corsOrigin : true,
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+    };
+
+    this.app.use(cors(corsOptions));
+    this.app.options(/.*/, cors(corsOptions));
 
     this.app.use(
       helmet({

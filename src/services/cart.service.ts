@@ -185,13 +185,26 @@ export class CartService extends CartBase {
       ),
   );
 
-  getUserCart = async (customerId: string) =>
-    (await Cart.findOne({ customerId })) ??
-    (() => {
+  getUserCart = async (customerId: string) => {
+    const cart = await Cart.findOne({ customerId })
+      .populate({
+        path: "meals.mealId",
+        select:
+          "name description price primaryImageUrl vendorId categoryName isAvailable publicationStatus",
+        populate: {
+          path: "vendorId",
+          select: "businessName businessLogoUrl",
+        },
+      });
+
+    if (!cart) {
       throw new NotFoundException(
         "Cart not found",
         HttpStatus.NOT_FOUND,
         ErrorCode.RESOURCE_NOT_FOUND,
       );
-    })();
+    }
+
+    return cart;
+  };
 }
