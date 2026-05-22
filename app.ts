@@ -5,10 +5,11 @@ import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import redoc from "redoc-express";
 import helmet from "helmet";
+import cors from "cors";
 
 import { errorHandler } from "./src/middlewares/error-handler.middleware.js";
 
-import { hostName, port } from "./src/constants/env.js";
+import { corsOrigin, hostName, port } from "./src/constants/env.js";
 import { Db } from "./src/config/db.config.js";
 import { swaggerSpec } from "./src/config/swagger.config.js";
 
@@ -43,6 +44,16 @@ export class App {
   }
 
   initiializeMiddlewares() {
+    this.app.use(
+      cors({
+        origin: corsOrigin?.length ? corsOrigin : true,
+        credentials: true,
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization"],
+      }),
+    );
+    this.app.options("*", cors());
+
     this.app.use(
       helmet({
         contentSecurityPolicy: {
