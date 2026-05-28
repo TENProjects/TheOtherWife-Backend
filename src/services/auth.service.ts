@@ -1,6 +1,8 @@
 /** @format */
 
 import { ClientSession } from "mongoose";
+import crypto from "crypto";
+import { OAuth2Client } from "google-auth-library";
 
 import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
@@ -16,9 +18,15 @@ import {
   generateRefreshToken,
   verifyToken,
   generateEmailToken,
-  generateOtp,
 } from "../util/generate-token.util.js";
-import { jwtRefreshSecret, nodeEnv } from "../constants/env.js";
+import {
+  hostName,
+  frontendUrl,
+  googleClientId,
+  jwtRefreshSecret,
+  nodeEnv,
+  resetPasswordTokenTtlMinutes,
+} from "../constants/env.js";
 import { transaction } from "../util/transaction.util.js";
 import { CreateProfile } from "../dispatcher/profile.dispatcher.js";
 import { MailData, mailer } from "./email.service.js";
@@ -28,6 +36,44 @@ import { getFormattedData } from "../util/get-maildata.js";
 
 export class AuthService {
   constructor() {}
+  private googleOauthClient = new OAuth2Client(googleClientId);
+
+  private sendVerificationEmail = async (user: any) => {
+    let numOfAttempt = 0;
+    const maxNumOfAttempt = 3;
+
+    const enableRetry = async (): Promise<void> => {
+      try {
+        const htmlTemplate = await getTemplate(
+          "src/templates",
+          "verify-signup.template.html",
+        );
+
+        const { template } = getFormattedData(htmlTemplate, user);
+        const baseHost = hostName.endsWith("/") ? hostName.slice(0, -1) : hostName;
+        const html = template.replaceAll(
+          "{{verificationUrl}}",
+          `${baseHost}/api/v1/auth/verify?token=${user.emailToken}`,
+        );
+
+        const data = {
+          user,
+          message: html,
+        };
+
+        await mailer.relayTo(data as MailData, MailAction.verifySignup);
+      } catch (error) {
+        numOfAttempt++;
+        if (numOfAttempt <= maxNumOfAttempt) {
+          await new Promise((res) => setTimeout(res, 1000));
+          return enableRetry();
+        }
+        console.error(error);
+      }
+    };
+
+    await enableRetry();
+  };
 
   signup =
     (allowedTypes: Array<keyof typeof CreateProfile>) =>
@@ -37,7 +83,7 @@ export class AuthService {
       email: string;
       password: string;
       userType: string;
-      phoneNumber: string;
+      phoneNumber?: string;
     }) => {
       return await transaction
         .use(async (session: ClientSession, body): Promise<any> => {
@@ -127,52 +173,9 @@ export class AuthService {
         })(body)
         .then((result) => {
           const { accessToken, refreshToken, ...userWithoutPassword } = result;
-          let numOfAttempt = 0;
-          const maxNumOfAttempt = 3;
 
           setImmediate(async () => {
-            const enableRetry = async () => {
-              try {
-                console.log("Signup user:", userWithoutPassword);
-
-                const htmlTemplate = await getTemplate(
-                  "src/templates",
-                  "verify-signup.template.html",
-                );
-
-                const { template } = getFormattedData(
-                  htmlTemplate,
-                  userWithoutPassword,
-                );
-
-                const html = template.replaceAll(
-                  "{{verificationUrl}}",
-                  `http://localhost:8000/api/v1/auth/verify?token=${userWithoutPassword.emailToken}`,
-                );
-
-                const data = {
-                  user: userWithoutPassword,
-                  message: html,
-                };
-
-                const info = await mailer.relayTo(
-                  data,
-                  MailAction.verifySignup,
-                );
-
-                console.log(`Verify Email sent successfully: ${info}`);
-              } catch (error: any) {
-                numOfAttempt++;
-                if (numOfAttempt <= maxNumOfAttempt) {
-                  await new Promise((res) => setTimeout(res, 1000));
-                  return enableRetry();
-                }
-
-                console.error(error);
-              }
-            };
-
-            await enableRetry();
+            await this.sendVerificationEmail(userWithoutPassword);
           });
 
           return result;
@@ -184,19 +187,35 @@ export class AuthService {
       .use(async (session: ClientSession, emailToken: string): Promise<any> => {
         try {
           console.log(`Verifying signup with token: ${emailToken}`);
-          let user = await User.findOne({
-            emailToken,
-            emailTokenExpiry: { $gt: new Date() },
-          }).session(session);
+          let user = await User.findOne({ emailToken }).session(session);
 
           if (!user) {
-            console.log(
-              `Verification failed: Token ${emailToken} not found or expired`,
-            );
             throw new NotFoundException(
-              "User not found or token expired",
+              "Invalid verification link",
               HttpStatus.NOT_FOUND,
-              ErrorCode.AUTH_USER_NOT_FOUND,
+              ErrorCode.AUTH_INVALID_TOKEN,
+            );
+          }
+
+          if (user.isEmailVerified) {
+            return user.omitPassword();
+          }
+
+          if (!user.emailTokenExpiry || user.emailTokenExpiry <= new Date()) {
+            const { emailToken: nextToken, emailTokenExpiry } = generateEmailToken();
+            user.emailToken = nextToken;
+            user.emailTokenExpiry = emailTokenExpiry;
+            await user.save({ session });
+
+            const userWithoutPassword = user.omitPassword();
+            setImmediate(async () => {
+              await this.sendVerificationEmail(userWithoutPassword);
+            });
+
+            throw new BadRequestException(
+              "Verification link expired. A new verification email has been sent.",
+              HttpStatus.BAD_REQUEST,
+              ErrorCode.AUTH_VERIFICATION_LINK_EXPIRED,
             );
           }
 
@@ -271,23 +290,28 @@ export class AuthService {
     async (
       session: ClientSession,
       body: {
-        phoneNumber?: string;
-        email?: string;
+        email: string;
         password: string;
       },
     ): Promise<any> => {
-      const { phoneNumber, email, password } = body;
+      const { email, password } = body;
 
       try {
-        let user = await User.findOne(
-          email ? { email } : { phoneNumber },
-        ).session(session);
+        let user = await User.findOne({ email }).session(session);
 
         if (!user) {
           throw new NotFoundException(
-            `Incorrect ${email ? "email" : "phone number"}`,
+            "Incorrect email",
             HttpStatus.NOT_FOUND,
             ErrorCode.AUTH_USER_NOT_FOUND,
+          );
+        }
+
+        if (!user.isEmailVerified) {
+          throw new UnauthorizedExceptionError(
+            "Account not verified. Please verify your email before logging in.",
+            HttpStatus.UNAUTHORIZED,
+            ErrorCode.AUTH_EMAIL_NOT_VERIFIED,
           );
         }
 
@@ -328,6 +352,87 @@ export class AuthService {
       } catch (error) {
         throw error;
       }
+    },
+  );
+
+  googleLogin = transaction.use(
+    async (
+      session: ClientSession,
+      idToken: string,
+    ): Promise<{
+      accessToken: string;
+      refreshToken: string;
+      [key: string]: any;
+    }> => {
+      if (!googleClientId) {
+        throw new BadRequestException(
+          "Google sign-in is not configured",
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
+
+      const ticket = await this.googleOauthClient.verifyIdToken({
+        idToken,
+        audience: googleClientId,
+      });
+
+      const payload = ticket.getPayload();
+      if (!payload?.email || !payload.email_verified) {
+        throw new UnauthorizedExceptionError(
+          "Google account email is not verified",
+          HttpStatus.UNAUTHORIZED,
+          ErrorCode.AUTH_UNAUTHORIZED_ACCESS,
+        );
+      }
+
+      let user = await User.findOne({ email: payload.email }).session(session);
+      if (!user) {
+        const [newUser] = await User.create(
+          [
+            {
+              firstName: payload.given_name || "Google",
+              lastName: payload.family_name || "User",
+              email: payload.email,
+              passwordHash: crypto.randomBytes(32).toString("hex"),
+              userType: "customer",
+              authType: "google",
+              isEmailVerified: true,
+              emailToken: "",
+              emailTokenExpiry: new Date(Date.now() - 1000),
+            },
+          ],
+          { session },
+        );
+
+        await CreateProfile.customer(newUser._id as unknown as string, session);
+        user = newUser;
+      } else if (!user.isEmailVerified) {
+        user.isEmailVerified = true;
+        user.authType = user.authType || "google";
+      }
+
+      const { token: accessToken } = generateToken(user);
+      const { refreshToken } = generateRefreshToken(user);
+
+      user = await User.findByIdAndUpdate(
+        user._id,
+        {
+          $set: {
+            lastLogin: new Date(),
+            isEmailVerified: true,
+            refreshToken,
+            refreshTokenExpiry: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        },
+        { new: true, session },
+      );
+
+      return {
+        accessToken,
+        refreshToken,
+        ...user?.omitPassword(),
+      };
     },
   );
 
@@ -421,47 +526,54 @@ export class AuthService {
           const user = await User.findOne({ email }).session(session);
 
           if (!user) {
-            throw new NotFoundException(
-              "User not found",
-              HttpStatus.NOT_FOUND,
-              ErrorCode.AUTH_USER_NOT_FOUND,
-            );
+            return null;
           }
 
-          const { otp, otpExpiry } = generateOtp();
-          user.otp = otp;
-          user.otpExpiry = otpExpiry;
+          const rawToken = crypto.randomBytes(32).toString("hex");
+          const tokenHash = crypto
+            .createHash("sha256")
+            .update(rawToken)
+            .digest("hex");
+
+          user.resetPasswordTokenHash = tokenHash;
+          user.resetPasswordExpiresAt = new Date(
+            Date.now() + resetPasswordTokenTtlMinutes * 60 * 1000,
+          );
           await user.save({ session });
 
-          return { otp };
+          return { user, rawToken };
         } catch (error) {
           throw error;
         }
       })(email)
       .then((result) => {
+        if (!result) {
+          return null;
+        }
+
         let numOfAttempt = 0;
         const maxNumOfAttempt = 3;
 
         setImmediate(async () => {
           const enableRetry = async () => {
             try {
-              console.log(Object.freeze(result));
-
               const htmlTemplate = await getTemplate(
                 "src/templates",
-                "welcome-email.templates.html",
+                "reset-password.template.html",
               );
 
-              const { template } = getFormattedData(htmlTemplate);
+              const { template } = getFormattedData(htmlTemplate, result.user);
+              const resetUrl = `${frontendUrl}/reset-password?token=${result.rawToken}`;
+              const html = template.replaceAll("{{resetUrl}}", resetUrl);
 
               const data = {
-                user: result,
-                message: template,
+                user: result.user,
+                message: html,
               } as MailData;
 
-              const info = await mailer.relayTo(data, MailAction.welcomeUser);
+              const info = await mailer.relayTo(data, MailAction.resetPassword);
 
-              console.log(`Email sent successfully: ${info}`);
+              console.log(`Password reset email sent successfully: ${info}`);
             } catch (error: any) {
               numOfAttempt++;
               if (numOfAttempt <= maxNumOfAttempt) {
@@ -478,6 +590,95 @@ export class AuthService {
         return result;
       });
   };
+
+  resetPassword = transaction.use(
+    async (
+      session: ClientSession,
+      body: {
+        token: string;
+        newPassword: string;
+      },
+    ): Promise<void> => {
+      const { token, newPassword } = body;
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+      const user = await User.findOne({
+        resetPasswordTokenHash: tokenHash,
+        resetPasswordExpiresAt: { $gt: new Date() },
+      }).session(session);
+
+      if (!user) {
+        throw new BadRequestException(
+          "Invalid or expired reset token",
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.AUTH_INVALID_TOKEN,
+        );
+      }
+
+      const isCurrentPassword = await user.comparePassword(newPassword);
+      if (isCurrentPassword) {
+        throw new BadRequestException(
+          "New password must be different from current password",
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
+
+      user.passwordHash = newPassword;
+      user.passwordChangedAt = new Date();
+      user.resetPasswordTokenHash = "";
+      user.resetPasswordExpiresAt = new Date(Date.now() - 1000);
+      user.refreshToken = "";
+      user.refreshTokenExpiry = new Date(Date.now() - 1000);
+      await user.save({ session });
+    },
+  );
+
+  changePassword = transaction.use(
+    async (
+      session: ClientSession,
+      body: {
+        userId: string;
+        currentPassword: string;
+        newPassword: string;
+      },
+    ): Promise<void> => {
+      const { userId, currentPassword, newPassword } = body;
+      const user = await User.findById(userId).session(session);
+
+      if (!user) {
+        throw new NotFoundException(
+          "User not found",
+          HttpStatus.NOT_FOUND,
+          ErrorCode.AUTH_USER_NOT_FOUND,
+        );
+      }
+
+      const isValidCurrent = await user.comparePassword(currentPassword);
+      if (!isValidCurrent) {
+        throw new UnauthorizedExceptionError(
+          "Current password is incorrect",
+          HttpStatus.UNAUTHORIZED,
+          ErrorCode.AUTH_UNAUTHORIZED_ACCESS,
+        );
+      }
+
+      const isSamePassword = await user.comparePassword(newPassword);
+      if (isSamePassword) {
+        throw new BadRequestException(
+          "New password must be different from current password",
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
+
+      user.passwordHash = newPassword;
+      user.passwordChangedAt = new Date();
+      user.refreshToken = "";
+      user.refreshTokenExpiry = new Date(Date.now() - 1000);
+      await user.save({ session });
+    },
+  );
 }
 
 // passwordReset = async (newPassword: string, token: string) => {

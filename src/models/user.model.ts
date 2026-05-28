@@ -8,11 +8,14 @@ export interface UserDocument extends Document {
   lastName: string;
   email: string;
   passwordHash: string;
-  phoneNumber: string;
+  phoneNumber?: string;
   emailToken: string;
   emailTokenExpiry: Date;
   otp: string;
   otpExpiry: Date;
+  resetPasswordTokenHash: string;
+  resetPasswordExpiresAt: Date;
+  passwordChangedAt: Date;
   refreshToken: string;
   refreshTokenExpiry: Date;
   status: string;
@@ -51,8 +54,9 @@ const UserSchema = new Schema(
     },
     phoneNumber: {
       type: String,
-      required: true,
+      required: false,
       unique: true,
+      sparse: true,
     },
     emailToken: {
       type: String,
@@ -64,6 +68,18 @@ const UserSchema = new Schema(
     },
     refreshToken: {
       type: String,
+      required: false,
+    },
+    resetPasswordTokenHash: {
+      type: String,
+      required: false,
+    },
+    resetPasswordExpiresAt: {
+      type: Date,
+      required: false,
+    },
+    passwordChangedAt: {
+      type: Date,
       required: false,
     },
     refreshTokenExpiry: {
@@ -84,7 +100,7 @@ const UserSchema = new Schema(
     authType: {
       type: String,
       enum: ["email", "google", "phoneNumber"],
-      default: "phoneNumber",
+      default: "email",
     },
     isEmailVerified: {
       type: Boolean,

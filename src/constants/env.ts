@@ -8,13 +8,11 @@ export const mongoUri: string = envconfig.MONGODB_URI;
 export const nodeEnv: string = envconfig.NODE_ENV;
 export const jwtSecret: string = envconfig.JWT_SECRET;
 export const jwtRefreshSecret: string = envconfig.JWT_REFRESH_SECRET;
+export const googleClientId: string = envconfig.GOOGLE_CLIENT_ID;
 export const corsOrigin: string | string[] | undefined = envconfig.CORS_ORIGIN
   ? envconfig.CORS_ORIGIN.split(",").map((origin) => origin.trim())
   : undefined;
-export const email_host: string = envconfig.EMAIL_HOST;
-export const email_port: number = envconfig.EMAIL_PORT;
-export const email_user: string = envconfig.EMAIL_USER;
-export const email_password: string = envconfig.EMAIL_PASSWORD;
+export const resendApiKey: string = envconfig.RESEND_API_KEY;
 export const from: string = envconfig.FROM;
 export const paystackSecretKey: string = envconfig.PAYSTACK_SECRET_KEY;
 export const paystackPublicKey: string = envconfig.PAYSTACK_PUBLIC_KEY;
@@ -24,6 +22,9 @@ export const cloudinaryCloudName: string = envconfig.CLOUDINARY_CLOUD_NAME;
 export const cloudinaryApiKey: string = envconfig.CLOUDINARY_API_KEY;
 export const cloudinaryApiSecret: string = envconfig.CLOUDINARY_API_SECRET;
 export const expoAccessToken: string | undefined = envconfig.EXPO_ACCESS_TOKEN;
+export const frontendUrl: string = envconfig.FRONTEND_URL;
+export const resetPasswordTokenTtlMinutes: number =
+  envconfig.RESET_PASSWORD_TOKEN_TTL_MINUTES;
 
 console.log("port", !!port);
 console.log("hostName", !!hostName);
@@ -31,10 +32,8 @@ console.log("mongoUri", !!mongoUri);
 console.log("nodeEnv", !!nodeEnv);
 console.log("jwtSecret", !!jwtSecret);
 console.log("jwtRefreshSecret", !!jwtRefreshSecret);
-console.log("email_host", !!email_host);
-console.log("email_port", !!email_port);
-console.log("email_user", !!email_user);
-console.log("email_password", !!email_password);
+console.log("googleClientId", !!googleClientId);
+console.log("resendApiKey", !!resendApiKey);
 console.log("from", !!from);
 console.log("paystackSecretKey", !!paystackSecretKey);
 console.log("paystackPublicKey", !!paystackPublicKey);
@@ -44,3 +43,5 @@ console.log("cloudinaryCloudName", !!cloudinaryCloudName);
 console.log("cloudinaryApiKey", !!cloudinaryApiKey);
 console.log("cloudinaryApiSecret", !!cloudinaryApiSecret);
 console.log("expoAccessToken", !!expoAccessToken);
+console.log("frontendUrl", !!frontendUrl);
+console.log("resetPasswordTokenTtlMinutes", !!resetPasswordTokenTtlMinutes);

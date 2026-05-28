@@ -12,20 +12,40 @@ export const registerUserSchema = z
     email: emailSchema,
     password: z.string().trim().min(8),
     userType: z.enum(["customer", "vendor"]),
-    phoneNumber: phoneNumberSchema,
-  })
-  .refine((data) => data.email && data.phoneNumber, {
-    message: "Email and phone number are required",
-    path: ["email", "phoneNumber"],
+    phoneNumber: phoneNumberSchema.optional(),
   });
 
-export const loginUserSchema = z
+export const loginUserSchema = z.object({
+  email: emailSchema,
+  password: z.string().trim().min(8),
+});
+
+export const googleLoginSchema = z.object({
+  idToken: z.string().trim().min(1),
+});
+
+export const forgotPasswordSchema = z.object({
+  email: emailSchema,
+});
+
+export const resetPasswordSchema = z
   .object({
-    email: emailSchema.optional(),
-    phoneNumber: phoneNumberSchema.optional(),
-    password: z.string().trim().min(8),
+    token: z.string().trim().min(1),
+    newPassword: z.string().trim().min(8),
+    confirmNewPassword: z.string().trim().min(8),
   })
-  .refine((data) => data.email || data.phoneNumber, {
-    message: "Email or phone number is required",
-    path: ["email", "phoneNumber"],
+  .refine((data) => data.newPassword === data.confirmNewPassword, {
+    message: "Passwords do not match",
+    path: ["confirmNewPassword"],
+  });
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().trim().min(8),
+    newPassword: z.string().trim().min(8),
+    confirmNewPassword: z.string().trim().min(8),
+  })
+  .refine((data) => data.newPassword === data.confirmNewPassword, {
+    message: "Passwords do not match",
+    path: ["confirmNewPassword"],
   });

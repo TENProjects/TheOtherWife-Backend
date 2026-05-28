@@ -4,7 +4,7 @@ import { AuthService } from "../services/auth.service.js";
 
 import { handleAsyncControl } from "../middlewares/handle-async-control.middleware.js";
 
-import type { NextFunction, Request, Response } from "express";
+import type { Request, Response } from "express";
 import { HttpStatus } from "../config/http.config.js";
 
 import { nodeEnv } from "../constants/env.js";
@@ -28,7 +28,7 @@ export class AuthController {
           email: string;
           password: string;
           userType: string;
-          phoneNumber: string;
+          phoneNumber?: string;
         }
       >,
       res: Response,
@@ -87,19 +87,14 @@ export class AuthController {
 
   handleLogin = handleAsyncControl(
     async (
-      req: Request<
-        {},
-        {},
-        { phoneNumber?: string; email?: string; password: string }
-      >,
+      req: Request<{}, {}, { email: string; password: string }>,
       res: Response,
     ): Promise<any> => {
-      const { phoneNumber, email, password } = req.body;
+      const { email, password } = req.body;
 
       try {
         const { accessToken, refreshToken, ...userWithoutPassword } =
           await this.authService.login({
-            phoneNumber,
             email,
             password,
           });
@@ -164,6 +159,34 @@ export class AuthController {
     },
   );
 
+  handleGoogleLogin = handleAsyncControl(
+    async (
+      req: Request<{}, {}, { idToken: string }>,
+      res: Response,
+    ): Promise<Response> => {
+      const { idToken } = req.body;
+      const { accessToken, refreshToken, ...userWithoutPassword } =
+        await this.authService.googleLogin(idToken);
+
+      return res
+        .cookie("token", accessToken, {
+          httpOnly: true,
+          sameSite: "strict",
+          secure: nodeEnv === "production",
+        })
+        .status(HttpStatus.OK)
+        .json({
+          status: "ok",
+          message: "Google login successful",
+          data: {
+            accessToken,
+            refreshToken,
+            userWithoutPassword,
+          },
+        } as ApiResponse);
+    },
+  );
+
   handleLogout = handleAsyncControl(
     async (req: Request, res: Response): Promise<any> => {
       const userId = req?.user?._id as unknown as string;
@@ -175,6 +198,68 @@ export class AuthController {
       } catch (error) {
         throw error;
       }
+    },
+  );
+
+  handleForgotPassword = handleAsyncControl(
+    async (
+      req: Request<{}, {}, { email: string }>,
+      res: Response,
+    ): Promise<Response> => {
+      await this.authService.forgotPassword(req.body.email);
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message:
+          "If an account with this email exists, a password reset link has been sent",
+      } as ApiResponse);
+    },
+  );
+
+  handleResetPassword = handleAsyncControl(
+    async (
+      req: Request<
+        {},
+        {},
+        { token: string; newPassword: string; confirmNewPassword: string }
+      >,
+      res: Response,
+    ): Promise<Response> => {
+      await this.authService.resetPassword({
+        token: req.body.token,
+        newPassword: req.body.newPassword,
+      });
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Password reset successful",
+      } as ApiResponse);
+    },
+  );
+
+  handleChangePassword = handleAsyncControl(
+    async (
+      req: Request<
+        {},
+        {},
+        {
+          currentPassword: string;
+          newPassword: string;
+          confirmNewPassword: string;
+        }
+      >,
+      res: Response,
+    ): Promise<Response> => {
+      const userId = req?.user?._id as unknown as string;
+      await this.authService.changePassword({
+        userId,
+        currentPassword: req.body.currentPassword,
+        newPassword: req.body.newPassword,
+      });
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Password changed successfully",
+      } as ApiResponse);
     },
   );
 }

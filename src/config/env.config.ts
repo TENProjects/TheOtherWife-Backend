@@ -16,11 +16,9 @@ type EnvConfig = {
   NODE_ENV: string;
   JWT_SECRET: string;
   JWT_REFRESH_SECRET: string;
+  GOOGLE_CLIENT_ID: string;
   CORS_ORIGIN?: string;
-  EMAIL_HOST: string;
-  EMAIL_PORT: number;
-  EMAIL_USER: string;
-  EMAIL_PASSWORD: string;
+  RESEND_API_KEY: string;
   FROM: string;
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_PUBLIC_KEY: string;
@@ -30,6 +28,8 @@ type EnvConfig = {
   CLOUDINARY_API_KEY: string;
   CLOUDINARY_API_SECRET: string;
   EXPO_ACCESS_TOKEN?: string;
+  FRONTEND_URL: string;
+  RESET_PASSWORD_TOKEN_TTL_MINUTES: number;
 };
 
 const getEnvConfig = (): EnvConfig => {
@@ -42,11 +42,9 @@ const getEnvConfig = (): EnvConfig => {
     NODE_ENV: getEnv("NODE_ENV") || "development",
     JWT_SECRET: getEnv("JWT_SECRET") || "secret",
     JWT_REFRESH_SECRET: getEnv("JWT_REFRESH_SECRET") || "refresh_secret",
+    GOOGLE_CLIENT_ID: getEnv("GOOGLE_CLIENT_ID"),
     CORS_ORIGIN: getEnv("CORS_ORIGIN") || "",
-    EMAIL_HOST: getEnv("EMAIL_HOST"),
-    EMAIL_PORT: Number(getEnv("EMAIL_PORT")),
-    EMAIL_USER: getEnv("EMAIL_USER"),
-    EMAIL_PASSWORD: getEnv("EMAIL_PASSWORD"),
+    RESEND_API_KEY: getEnv("RESEND_API_KEY"),
     FROM: getEnv("FROM"),
     PAYSTACK_SECRET_KEY: getEnv("PAYSTACK_SECRET_KEY"),
     PAYSTACK_PUBLIC_KEY: getEnv("PAYSTACK_PUBLIC_KEY"),
@@ -56,6 +54,10 @@ const getEnvConfig = (): EnvConfig => {
     CLOUDINARY_API_KEY: getEnv("CLOUDINARY_API_KEY"),
     CLOUDINARY_API_SECRET: getEnv("CLOUDINARY_API_SECRET"),
     EXPO_ACCESS_TOKEN: getEnv("EXPO_ACCESS_TOKEN"),
+    FRONTEND_URL: getEnv("FRONTEND_URL") || "http://localhost:3000",
+    RESET_PASSWORD_TOKEN_TTL_MINUTES: Number(
+      getEnv("RESET_PASSWORD_TOKEN_TTL_MINUTES") || "30",
+    ),
   };
 };
 

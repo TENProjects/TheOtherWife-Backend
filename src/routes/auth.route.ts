@@ -3,7 +3,11 @@
 import { Router } from "express";
 import { AuthController } from "../controllers/auth.controller.js";
 import {
+  changePasswordSchema,
+  forgotPasswordSchema,
+  googleLoginSchema,
   loginUserSchema,
+  resetPasswordSchema,
   registerUserSchema,
 } from "../zod-schema/auth.schema.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
@@ -28,7 +32,7 @@ import { zodValidation } from "../middlewares/validation.js";
  *               email: { type: string, format: email }
  *               password: { type: string, format: password }
  *               userType: { type: string, enum: [customer, vendor] }
- *               phoneNumber: { type: string }
+ *               phoneNumber: { type: string, nullable: true }
  *     responses:
  *       "200":
  *         description: User registered successfully
@@ -120,9 +124,8 @@ import { zodValidation } from "../middlewares/validation.js";
  *         application/json:
  *           schema:
  *             type: object
- *             required: [password]
+ *             required: [email, password]
  *             properties:
- *               phoneNumber: { type: string }
  *               email: { type: string, format: email }
  *               password: { type: string, format: password }
  *     responses:
@@ -268,11 +271,32 @@ class AuthRouter {
       this.authController.handleLogin,
     );
     this.router.post(
+      "/google",
+      zodValidation(googleLoginSchema),
+      this.authController.handleGoogleLogin,
+    );
+    this.router.post(
       "/logout",
       authMiddleware,
       this.authController.handleLogout,
     );
     this.router.post("/refresh", this.authController.handleRefreshLogin);
+    this.router.post(
+      "/forgot-password",
+      zodValidation(forgotPasswordSchema),
+      this.authController.handleForgotPassword,
+    );
+    this.router.post(
+      "/reset-password",
+      zodValidation(resetPasswordSchema),
+      this.authController.handleResetPassword,
+    );
+    this.router.post(
+      "/change-password",
+      authMiddleware,
+      zodValidation(changePasswordSchema),
+      this.authController.handleChangePassword,
+    );
   }
 }
 
