@@ -18,7 +18,7 @@ export const MailAction: Record<string, MailerCallback> = {
   verifySignup: (mailClient: MailClient, data: MailData) => {
     const { user, message } = data;
     return mailClient.sendMail({
-      from: `"Peace from TheOtherWife" <${from}>`,
+      from: `"TheOtherWife" <${from}>`,
       to: user.email,
       subject: mailSubject.verifySignup,
       html: message,
@@ -27,7 +27,7 @@ export const MailAction: Record<string, MailerCallback> = {
   welcomeUser: (mailClient: MailClient, data: MailData) => {
     const { user, message } = data;
     return mailClient.sendMail({
-      from: `"Peace from TheOtherWife" <${from}>`,
+      from: `"TheOtherWife" <${from}>`,
       to: user.email,
       subject: mailSubject.welcomeUser,
       html: message,
@@ -36,7 +36,7 @@ export const MailAction: Record<string, MailerCallback> = {
   resetPassword: (mailClient: MailClient, data: MailData) => {
     const { user, message } = data;
     return mailClient.sendMail({
-      from: `"Peace from TheOtherWife" <${from}>`,
+      from: `"TheOtherWife" <${from}>`,
       to: user.email,
       subject: mailSubject.resetPassword,
       html: message,
