@@ -20,7 +20,6 @@ import {
   generateEmailToken,
 } from "../util/generate-token.util.js";
 import {
-  hostName,
   frontendUrl,
   googleClientId,
   jwtRefreshSecret,
@@ -50,7 +49,9 @@ export class AuthService {
         );
 
         const { template } = getFormattedData(htmlTemplate, user);
-        const baseHost = hostName.endsWith("/") ? hostName.slice(0, -1) : hostName;
+        const baseHost = frontendUrl.endsWith("/")
+          ? frontendUrl.slice(0, -1)
+          : frontendUrl;
         const html = template.replaceAll(
           "{{verificationUrl}}",
           `${baseHost}/api/v1/auth/verify?token=${user.emailToken}`,
