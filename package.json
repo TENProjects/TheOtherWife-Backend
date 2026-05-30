@@ -8,7 +8,8 @@
     "seed": "tsx src/seeder/seeder.ts",
     "build": "npx tsc -p tsconfig.build.json",
     "start": "tsx app.ts",
-    "dev": "tsx watch app.ts"
+    "dev": "tsx watch app.ts",
+    "backfill:vendor-wallet": "tsx src/scripts/backfill-vendor-wallet.ts"
   },
   "keywords": [],
   "author": "paul elisha",

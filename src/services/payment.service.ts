@@ -19,6 +19,7 @@ import { transaction } from "../util/transaction.util.js";
 import { PromoService } from "./promo.service.js";
 import { WalletService } from "./wallet.service.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
+import { VendorWalletService } from "./vendor-wallet.service.js";
 
 type InitializePaystackInput = {
   email: string;
@@ -37,10 +38,12 @@ type PaystackInitializeResponse = {
 export class PaymentService {
   private promoService: PromoService;
   private walletService: WalletService;
+  private vendorWalletService: VendorWalletService;
 
   constructor() {
     this.promoService = new PromoService();
     this.walletService = new WalletService();
+    this.vendorWalletService = new VendorWalletService();
   }
 
   initializePaystackPayment = async (
@@ -201,6 +204,11 @@ export class PaymentService {
             order._id.toString(),
           );
 
+          await this.vendorWalletService.syncPaymentSettlementFromOrder(
+            session,
+            paymentRecord._id.toString(),
+          );
+
           return { handled: true, payment: paymentRecord, order };
         },
       )(payment._id.toString(), event.data);
@@ -296,6 +304,11 @@ export class PaymentService {
             },
           },
           { session },
+        );
+
+        await this.vendorWalletService.syncPaymentSettlementFromOrder(
+          session,
+          paymentRecord._id.toString(),
         );
 
         return { handled: true, payment: paymentRecord, order };

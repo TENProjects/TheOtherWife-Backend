@@ -369,6 +369,7 @@ export class CheckoutService {
             {
               orderId: newOrder._id,
               customerId: currentCustomerId,
+              vendorId: checkoutContext.vendor._id,
               provider: paymentProvider,
               reference: `tow_${crypto.randomUUID().replace(/-/g, "")}`,
               amount: paystackAmountDue,
@@ -384,6 +385,15 @@ export class CheckoutService {
                   paystackAmountDue,
                 },
               },
+              vendorGrossAmount: checkoutContext.pricing.totalAmount,
+              vendorPlatformFeeAmount: checkoutContext.pricing.serviceCharge,
+              vendorNetAmount: Math.max(
+                checkoutContext.pricing.totalAmount -
+                  checkoutContext.pricing.serviceCharge,
+                0,
+              ),
+              vendorSettledAmount: 0,
+              settlementStatus: "ineligible",
             },
           ],
           { session },
@@ -499,6 +509,8 @@ export class CheckoutService {
 
           paymentRecord.status = "succeeded";
           paymentRecord.paidAt = paidAt;
+          paymentRecord.settlementStatus = "unsettled";
+          paymentRecord.settlementEligibleAt = paidAt;
           paymentRecord.providerPayload = {
             ...(paymentRecord.providerPayload ?? {}),
             walletOnly: true,

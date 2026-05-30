@@ -5,11 +5,18 @@ import mongoose, { Document, Schema, model } from "mongoose";
 export interface PaymentDocument extends Document {
   orderId: mongoose.Types.ObjectId;
   customerId: mongoose.Types.ObjectId;
+  vendorId: mongoose.Types.ObjectId;
   provider: string;
   reference: string;
   amount: number;
   currency: string;
   status: string;
+  vendorGrossAmount: number;
+  vendorPlatformFeeAmount: number;
+  vendorNetAmount: number;
+  vendorSettledAmount: number;
+  settlementStatus: string;
+  settlementEligibleAt?: Date;
   providerTransactionId?: string;
   accessCode?: string;
   authorizationUrl?: string;
@@ -28,6 +35,12 @@ const PaymentSchema = new Schema(
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required: true,
+      index: true,
+    },
+    vendorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Vendor",
       required: true,
       index: true,
     },
@@ -67,6 +80,41 @@ const PaymentSchema = new Schema(
       ],
       required: true,
       default: "initialized",
+    },
+    vendorGrossAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    vendorPlatformFeeAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    vendorNetAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    vendorSettledAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    settlementStatus: {
+      type: String,
+      enum: ["ineligible", "unsettled", "partially_paid", "paid", "reversed"],
+      required: true,
+      default: "ineligible",
+      index: true,
+    },
+    settlementEligibleAt: {
+      type: Date,
+      required: false,
     },
     providerTransactionId: {
       type: String,

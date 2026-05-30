@@ -29,6 +29,8 @@ import { vendorOnboardingRouter } from "./src/routes/vendor-onboarding.route.js"
 import { uploadRouter } from "./src/routes/upload.route.js";
 import { walletRouter } from "./src/routes/wallet.route.js";
 import { analyticsRouter } from "./src/routes/analytics.route.js";
+import { vendorWalletRouter } from "./src/routes/vendor-wallet.route.js";
+import { adminVendorPayoutRouter } from "./src/routes/admin-vendor-payout.route.js";
 import "./src/signals/push-notification.signal.js";
 
 export class App {
@@ -116,6 +118,8 @@ export class App {
     this.app.use("/api/v1/orders", orderRouter);
     this.app.use("/api/v1/payments", paymentRouter);
     this.app.use("/api/v1/wallet", walletRouter);
+    this.app.use("/api/v1/vendor-wallet", vendorWalletRouter);
+    this.app.use("/api/v1/admin/vendor-payout-requests", adminVendorPayoutRouter);
     this.app.use("/api/v1/analytics", analyticsRouter);
 
     this.app.get("/api-docs", async (_req, res) => {
