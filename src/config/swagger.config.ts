@@ -628,6 +628,53 @@ const swaggerDefinition = {
         type: "string",
         enum: ["pending", "approved", "suspended", "rejected"],
       },
+      PaymentSettlementStatus: {
+        type: "string",
+        enum: ["ineligible", "unsettled", "partially_paid", "paid", "reversed"],
+      },
+      VendorPayoutRequestStatus: {
+        type: "string",
+        enum: ["requested", "processing", "approved", "rejected"],
+      },
+      VendorPayoutRequestPaymentStatus: {
+        type: "string",
+        enum: ["unpaid", "paid"],
+      },
+      VendorPayoutRequestCreatePayload: {
+        type: "object",
+        required: ["amount"],
+        properties: {
+          amount: { type: "number", minimum: 0.01 },
+          note: { type: "string" },
+          bankName: { type: "string" },
+          accountName: { type: "string" },
+          accountNumber: { type: "string" },
+        },
+      },
+      AdminVendorPayoutRequestUpdatePayload: {
+        type: "object",
+        properties: {
+          status: { $ref: "#/components/schemas/VendorPayoutRequestStatus" },
+          paymentStatus: {
+            $ref: "#/components/schemas/VendorPayoutRequestPaymentStatus",
+          },
+          approvedAmount: { type: "number", minimum: 0.01 },
+          payoutReference: { type: "string" },
+          note: { type: "string" },
+          rejectionReason: { type: "string" },
+          allocations: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["paymentId", "amount"],
+              properties: {
+                paymentId: { type: "string" },
+                amount: { type: "number", minimum: 0.01 },
+              },
+            },
+          },
+        },
+      },
       ErrorResponse: {
         type: "object",
         properties: {
