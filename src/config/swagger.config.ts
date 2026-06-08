@@ -469,7 +469,55 @@ const swaggerDefinition = {
           postalCode: { type: "string" },
           latitude: { type: "number" },
           longitude: { type: "number" },
+          location: {
+            type: "object",
+            description:
+              "GeoJSON point kept in sync with latitude/longitude, indexed with a 2dsphere index for radius search.",
+            properties: {
+              type: { type: "string", enum: ["Point"] },
+              coordinates: {
+                type: "array",
+                items: { type: "number" },
+                description: "[longitude, latitude]",
+                example: [3.3538, 6.5005],
+              },
+            },
+          },
           isDefault: { type: "boolean" },
+        },
+      },
+      SearchRadius: {
+        type: "object",
+        description:
+          "Metadata describing the location filter applied to a meal/vendor list.",
+        properties: {
+          strategy: {
+            type: "string",
+            enum: ["radius", "none"],
+            description:
+              "`radius` when results are filtered to the customer's area; `none` when no usable customer address is available and the unfiltered result set is returned.",
+          },
+          radiusKm: {
+            type: "number",
+            nullable: true,
+            description:
+              "Effective search width in kilometers (null when strategy is `none`).",
+            example: 10,
+          },
+          customerAddress: {
+            type: "object",
+            nullable: true,
+            description:
+              "The customer address the radius was measured from (null when strategy is `none`).",
+            properties: {
+              id: { type: "string" },
+              city: { type: "string" },
+              state: { type: "string" },
+              country: { type: "string" },
+              latitude: { type: "number" },
+              longitude: { type: "number" },
+            },
+          },
         },
       },
       Cart: {

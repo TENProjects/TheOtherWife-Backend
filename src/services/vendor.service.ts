@@ -27,10 +27,17 @@ export class VendorService {
     this.searchRadiusService = new SearchRadiusService();
   }
 
-  getFeaturedVendors = async (customerUserId?: string, limit?: number) => {
+  getFeaturedVendors = async (
+    customerUserId?: string,
+    limit?: number,
+    radiusKm?: number,
+  ) => {
     const normalizedLimit = Math.min(Math.max(limit ?? 6, 1), 20);
-    const { vendorIds, strategy, customerAddress } =
-      await this.searchRadiusService.getVendorSearchContext(customerUserId);
+    const { vendorIds, strategy, customerAddress, radiusKm: appliedRadiusKm } =
+      await this.searchRadiusService.getVendorSearchContext(
+        customerUserId,
+        radiusKm,
+      );
 
     const query: Record<string, any> = {
       approvalStatus: "approved",
@@ -110,6 +117,7 @@ export class VendorService {
         limit: normalizedLimit,
         searchRadius: {
           strategy,
+          radiusKm: appliedRadiusKm,
           customerAddress,
         },
       },

@@ -32,11 +32,15 @@ export class VendorController {
   getFeaturedVendors = handleAsyncControl(
     async (req: Request, res: Response): Promise<Response> => {
       const limitValue = Number(req.query.limit);
+      const radiusValue = Number(req.query.radius);
       const featuredVendors = await this.vendorService.getFeaturedVendors(
         req.user?.userType === "customer"
           ? (req.user?._id as unknown as string)
           : undefined,
         Number.isFinite(limitValue) ? limitValue : undefined,
+        Number.isFinite(radiusValue) && radiusValue > 0
+          ? radiusValue
+          : undefined,
       );
 
       return res.status(HttpStatus.OK).json({

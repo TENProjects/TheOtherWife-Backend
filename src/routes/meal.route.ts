@@ -58,13 +58,43 @@ import {
  *         required: false
  *         schema:
  *           type: number
+ *       - name: radius
+ *         in: query
+ *         required: false
+ *         description: >-
+ *           Search width in kilometers from the customer's address
+ *           (e.g. 10, 20, 50). Clamped between 1 and 100; defaults to the
+ *           SEARCH_RADIUS_KM server setting. Only applied for customers with a
+ *           saved address.
+ *         schema:
+ *           type: number
  *     responses:
  *       200:
- *         description: Meal fetched successfully
+ *         description: Meals fetched successfully
  *         content:
  *           application/json:
  *             schema:
- *               $ref: "#/components/schemas/Meal"
+ *               allOf:
+ *                 - $ref: "#/components/schemas/ApiResponse"
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         meals:
+ *                           type: array
+ *                           items:
+ *                             $ref: "#/components/schemas/Meal"
+ *                         pagination:
+ *                           type: object
+ *                           properties:
+ *                             pageSize: { type: number }
+ *                             pageNumber: { type: number }
+ *                             totalMeals: { type: number }
+ *                             totalPages: { type: number }
+ *                             skip: { type: number }
+ *                         searchRadius:
+ *                           $ref: "#/components/schemas/SearchRadius"
  */
 
 /**

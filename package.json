@@ -9,7 +9,8 @@
     "build": "npx tsc -p tsconfig.build.json",
     "start": "tsx app.ts",
     "dev": "tsx watch app.ts",
-    "backfill:vendor-wallet": "tsx src/scripts/backfill-vendor-wallet.ts"
+    "backfill:vendor-wallet": "tsx src/scripts/backfill-vendor-wallet.ts",
+    "backfill:address-location": "tsx src/scripts/backfill-address-location.ts"
   },
   "keywords": [],
   "author": "paul elisha",

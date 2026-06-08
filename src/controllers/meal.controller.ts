@@ -53,6 +53,7 @@ export class MealController {
       try {
         const pageSizeValue = Number(req.query.pageSize);
         const pageNumberValue = Number(req.query.pageNumber);
+        const radiusValue = Number(req.query.radius);
 
         const query = {
           customerUserId:
@@ -66,6 +67,10 @@ export class MealController {
               : (req.query.tags as string[] | undefined),
           mealId: req.query.mealId as string,
           category: req.query.category as string,
+          radiusKm:
+            Number.isFinite(radiusValue) && radiusValue > 0
+              ? radiusValue
+              : undefined,
         };
 
         const pagination = {

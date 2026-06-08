@@ -25,13 +25,39 @@ import { uploadBusinessLogoToCloudinary } from "../middlewares/cloudinary-upload
  *         required: false
  *         schema:
  *           type: number
+ *       - in: query
+ *         name: radius
+ *         required: false
+ *         description: >-
+ *           Search width in kilometers from the customer's address
+ *           (e.g. 10, 20, 50). Clamped between 1 and 100; defaults to the
+ *           SEARCH_RADIUS_KM server setting. Only applied for customers with a
+ *           saved address.
+ *         schema:
+ *           type: number
  *     responses:
  *       "200":
  *         description: Featured vendors fetched successfully
  *         content:
  *           application/json:
  *             schema:
- *               $ref: "#/components/schemas/ApiResponse"
+ *               allOf:
+ *                 - $ref: "#/components/schemas/ApiResponse"
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         vendors:
+ *                           type: array
+ *                           items:
+ *                             $ref: "#/components/schemas/Vendor"
+ *                         meta:
+ *                           type: object
+ *                           properties:
+ *                             limit: { type: number }
+ *                             searchRadius:
+ *                               $ref: "#/components/schemas/SearchRadius"
  */
 
 /**

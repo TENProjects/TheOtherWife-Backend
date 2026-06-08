@@ -376,15 +376,20 @@ export class MealService {
       tags?: string[];
       mealId?: string;
       category?: string;
+      radiusKm?: number;
     },
     pagination: { pageSize?: number; pageNumber?: number },
   ) => {
-    const { customerUserId, search, tags = [], mealId, category } = data;
+    const { customerUserId, search, tags = [], mealId, category, radiusKm } =
+      data;
     const pageSize = Math.min(Math.max(pagination.pageSize ?? 10, 1), 50);
     const pageNumber = Math.max(pagination.pageNumber ?? 1, 1);
     const skip = (pageNumber - 1) * pageSize;
-    const { vendorIds } =
-      await this.searchRadiusService.getVendorSearchContext(customerUserId);
+    const { vendorIds, strategy, customerAddress, radiusKm: appliedRadiusKm } =
+      await this.searchRadiusService.getVendorSearchContext(
+        customerUserId,
+        radiusKm,
+      );
     const activeVendors = await Vendor.find({
       approvalStatus: "approved",
       isAvailable: { $ne: false },
@@ -453,6 +458,11 @@ export class MealService {
         totalMeals,
         totalPages,
         skip,
+      },
+      searchRadius: {
+        strategy,
+        radiusKm: appliedRadiusKm,
+        customerAddress,
       },
     };
   };

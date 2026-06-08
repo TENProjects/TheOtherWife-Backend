@@ -30,6 +30,7 @@ type EnvConfig = {
   EXPO_ACCESS_TOKEN?: string;
   FRONTEND_URL: string;
   RESET_PASSWORD_TOKEN_TTL_MINUTES: number;
+  SEARCH_RADIUS_KM: number;
 };
 
 const getEnvConfig = (): EnvConfig => {
@@ -58,6 +59,7 @@ const getEnvConfig = (): EnvConfig => {
     RESET_PASSWORD_TOKEN_TTL_MINUTES: Number(
       getEnv("RESET_PASSWORD_TOKEN_TTL_MINUTES") || "30",
     ),
+    SEARCH_RADIUS_KM: Number(getEnv("SEARCH_RADIUS_KM") || "25"),
   };
 };
 

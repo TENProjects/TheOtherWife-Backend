@@ -25,6 +25,7 @@ export const expoAccessToken: string | undefined = envconfig.EXPO_ACCESS_TOKEN;
 export const frontendUrl: string = envconfig.FRONTEND_URL;
 export const resetPasswordTokenTtlMinutes: number =
   envconfig.RESET_PASSWORD_TOKEN_TTL_MINUTES;
+export const searchRadiusKm: number = envconfig.SEARCH_RADIUS_KM;
 
 console.log("port", !!port);
 console.log("hostName", !!hostName);
