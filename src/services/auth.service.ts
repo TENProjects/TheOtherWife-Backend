@@ -432,7 +432,7 @@ export class AuthService {
       return {
         accessToken,
         refreshToken,
-        ...user?.omitPassword(),
+        ...(user?.omitPassword() as any),
       };
     },
   );
@@ -490,7 +490,7 @@ export class AuthService {
         return {
           accessToken: newAccessToken,
           refreshToken: newRefreshToken,
-          ...user?.omitPassword(),
+          ...(user?.omitPassword() as any),
         };
       } catch (error) {
         throw error;
