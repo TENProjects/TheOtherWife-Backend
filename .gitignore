@@ -1,7 +1,23 @@
+# Dependencies
 node_modules/
-dist
+
+# Build output
+dist/
+
+# Tests
 tests/
 
-.qodo
+# IDE / tools
+.qodo/
+
+# Environment files
 .env
-.env.**
+.env.*
+!.env.example
+
+# Encrypted environment assets
+env.enc.key
+env.prod.enc
+.env.prod
+
+package-lock.json
