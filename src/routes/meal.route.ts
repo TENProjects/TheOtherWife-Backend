@@ -122,6 +122,11 @@ import {
  * /api/v1/meals/{id}:
  *   get:
  *     summary: Get meal details
+ *     description: >-
+ *       Returns the meal along with its vendor-defined packagingOptions,
+ *       proteinOptions, drinksOptions, addOns, preparationType, availability,
+ *       and the fixed spiceLevels list — everything the meal-details
+ *       selection screen needs.
  *     tags: [Meal]
  *     parameters:
  *       - name: id
@@ -135,7 +140,15 @@ import {
  *         content:
  *           application/json:
  *             schema:
- *               $ref: "#/components/schemas/ApiResponse"
+ *               allOf:
+ *                 - $ref: "#/components/schemas/ApiResponse"
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         meal:
+ *                           $ref: "#/components/schemas/Meal"
  *       "404":
  *         description: Not found
  */
@@ -185,6 +198,33 @@ import {
  *                 enum: [draft, published]
  *               isAvailable:
  *                 type: boolean
+ *               preparationType:
+ *                 type: string
+ *                 enum: [freshly_cooked, cook_and_freeze, both]
+ *               availability:
+ *                 type: string
+ *                 enum: [daily, weekly, custom]
+ *               availabilitySchedule:
+ *                 type: array
+ *                 items: { type: string }
+ *                 description: Day names, used when availability is 'weekly'
+ *               availabilityNote:
+ *                 type: string
+ *                 description: Used when availability is 'custom'
+ *               packagingOptions:
+ *                 type: string
+ *                 description: >-
+ *                   JSON-encoded array of {name, price} objects, e.g.
+ *                   '[{"name":"Big Pack","price":500}]'
+ *               proteinOptions:
+ *                 type: string
+ *                 description: JSON-encoded array of {name, price} objects
+ *               drinksOptions:
+ *                 type: string
+ *                 description: JSON-encoded array of {name, price} objects
+ *               addOns:
+ *                 type: string
+ *                 description: JSON-encoded array of {name, price} objects
  *     responses:
  *       200:
  *         description: Meal updated successfully
@@ -266,6 +306,9 @@ import {
  *               - description
  *               - price
  *               - categoryName
+ *               - preparationType
+ *               - packagingOptions
+ *               - proteinOptions
  *             properties:
  *               name: { type: string }
  *               description: { type: string }
@@ -287,6 +330,34 @@ import {
  *               publicationStatus:
  *                 type: string
  *                 enum: [draft, published]
+ *               preparationType:
+ *                 type: string
+ *                 enum: [freshly_cooked, cook_and_freeze, both]
+ *               availability:
+ *                 type: string
+ *                 enum: [daily, weekly, custom]
+ *                 default: daily
+ *               availabilitySchedule:
+ *                 type: array
+ *                 items: { type: string }
+ *                 description: Day names, used when availability is 'weekly'
+ *               availabilityNote:
+ *                 type: string
+ *                 description: Used when availability is 'custom'
+ *               packagingOptions:
+ *                 type: string
+ *                 description: >-
+ *                   JSON-encoded array of {name, price} objects, at least one
+ *                   required, e.g. '[{"name":"Big Pack","price":500}]'
+ *               proteinOptions:
+ *                 type: string
+ *                 description: JSON-encoded array of {name, price} objects, at least one required
+ *               drinksOptions:
+ *                 type: string
+ *                 description: JSON-encoded array of {name, price} objects (optional)
+ *               addOns:
+ *                 type: string
+ *                 description: JSON-encoded array of {name, price} objects (optional)
  *     responses:
  *       201:
  *         description: Meal created successfully

@@ -20,6 +20,10 @@ import { PaymentService } from "./payment.service.js";
 import { isVendorReceivingOrders } from "../util/vendor-opening-hours.util.js";
 import { WalletService } from "./wallet.service.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
+import {
+  computeCustomizationDelta,
+  MealCustomization,
+} from "../util/meal-customization.util.js";
 
 type CheckoutPaymentProvider = "paystack" | "cash" | "wallet";
 
@@ -30,6 +34,7 @@ type CheckoutItem = {
   unitPrice: number;
   lineTotal: number;
   vendorId: string;
+  customization?: MealCustomization;
 };
 
 type CheckoutPricing = {
@@ -153,13 +158,17 @@ export class CheckoutService {
 
       vendorIds.add(meal.vendorId.toString());
 
+      const unitPrice =
+        meal.price + computeCustomizationDelta(item.customization);
+
       return {
         mealId: meal._id.toString(),
         mealName: meal.name,
         quantity: item.quantity,
-        unitPrice: meal.price,
-        lineTotal: meal.price * item.quantity,
+        unitPrice,
+        lineTotal: unitPrice * item.quantity,
         vendorId: meal.vendorId.toString(),
+        customization: item.customization,
       };
     });
 
@@ -318,6 +327,7 @@ export class CheckoutService {
                 quantity: item.quantity,
                 unitPrice: item.unitPrice,
                 lineTotal: item.lineTotal,
+                customization: item.customization,
               })),
               addressSnapshot: {
                 label: checkoutContext.address.label,

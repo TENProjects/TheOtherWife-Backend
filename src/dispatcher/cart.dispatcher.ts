@@ -1,11 +1,13 @@
 /** @format */
 import Cart, { CartDocument } from "../models/cart.model.js";
 import Meal, { MealDocument } from "../models/meal.model.js";
+import type { MealCustomization } from "../util/meal-customization.util.js";
 
 export type CartAction = (
   cart: CartDocument,
   meal: MealDocument,
   quantity: number,
+  customization?: MealCustomization,
 ) => void;
 
 export const CartActions: Record<string, CartAction> = {
@@ -29,11 +31,20 @@ export const CartActions: Record<string, CartAction> = {
       }
     }
   },
-  add: (cart: CartDocument, meal: MealDocument, quantity: number) => {
+  add: (
+    cart: CartDocument,
+    meal: MealDocument,
+    quantity: number,
+    customization?: MealCustomization,
+  ) => {
     const existingMeal = cart.meals.find(
       (m) => m.mealId.toString() === meal._id.toString(),
     );
     if (existingMeal) {
+      // Known, accepted limitation: re-adding the same meal with a
+      // different customization does not create a new line or merge
+      // customizations — quantity just increments and the first
+      // customization on the line is kept as-is.
       existingMeal.quantity += quantity;
     } else {
       cart.meals.push({
@@ -41,6 +52,7 @@ export const CartActions: Record<string, CartAction> = {
         price: meal.price,
         quantity,
         totalPrice: meal.price * quantity,
+        customization,
       });
     }
   },

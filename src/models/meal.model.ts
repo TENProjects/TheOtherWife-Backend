@@ -2,6 +2,12 @@
 
 import mongoose, { Document, Schema, model } from "mongoose";
 
+export interface MealOption {
+  _id?: mongoose.Types.ObjectId;
+  name: string;
+  price: number;
+}
+
 export interface MealDocument extends Document {
   vendorId: mongoose.Types.ObjectId;
   categoryId: mongoose.Types.ObjectId;
@@ -18,11 +24,35 @@ export interface MealDocument extends Document {
   preparationTime: number;
   servingSize: string;
   additionalData: string;
+  preparationType?: "freshly_cooked" | "cook_and_freeze" | "both";
+  availability: "daily" | "weekly" | "custom";
+  availabilitySchedule?: Array<string>;
+  availabilityNote?: string;
+  packagingOptions: Array<MealOption>;
+  proteinOptions: Array<MealOption>;
+  drinksOptions: Array<MealOption>;
+  addOns: Array<MealOption>;
   ratingAverage: number;
   ratingCount: number;
   ratingScore: number;
   isDeleted: boolean;
 }
+
+const MealOptionSchema = new Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    price: {
+      type: Number,
+      required: true,
+      default: 0,
+      min: 0,
+    },
+  },
+);
 
 const MealSchema = new Schema({
   vendorId: {
@@ -81,6 +111,45 @@ const MealSchema = new Schema({
   additionalData: {
     type: String,
     required: false,
+  },
+  preparationType: {
+    type: String,
+    enum: ["freshly_cooked", "cook_and_freeze", "both"],
+    required: false,
+  },
+  availability: {
+    type: String,
+    enum: ["daily", "weekly", "custom"],
+    required: true,
+    default: "daily",
+  },
+  availabilitySchedule: {
+    type: [String],
+    default: undefined,
+  },
+  availabilityNote: {
+    type: String,
+    required: false,
+  },
+  packagingOptions: {
+    type: [MealOptionSchema],
+    required: true,
+    default: [],
+  },
+  proteinOptions: {
+    type: [MealOptionSchema],
+    required: true,
+    default: [],
+  },
+  drinksOptions: {
+    type: [MealOptionSchema],
+    required: true,
+    default: [],
+  },
+  addOns: {
+    type: [MealOptionSchema],
+    required: true,
+    default: [],
   },
   ratingAverage: {
     type: Number,

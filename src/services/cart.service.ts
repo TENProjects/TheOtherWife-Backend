@@ -7,10 +7,96 @@ import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
 import Cart, { CartDocument } from "../models/cart.model.js";
 import { CartAction, CartActions } from "../dispatcher/cart.dispatcher.js";
-import Meal from "../models/meal.model.js";
+import Meal, { MealDocument, MealOption } from "../models/meal.model.js";
 import { transaction } from "../util/transaction.util.js";
+import {
+  computeCustomizationDelta,
+  MealCustomization,
+} from "../util/meal-customization.util.js";
+
+const resolveOptionPrice = (
+  options: MealOption[],
+  name: string,
+): number => {
+  const match = options.find((option) => option.name === name);
+
+  if (!match) {
+    throw new BadRequestException(
+      `"${name}" is not a valid option for this meal`,
+      HttpStatus.BAD_REQUEST,
+      ErrorCode.VALIDATION_ERROR,
+    );
+  }
+
+  return match.price;
+};
 
 class CartBase {
+  resolveCustomization = (
+    meal: MealDocument,
+    customization: MealCustomization | undefined,
+  ): MealCustomization | undefined => {
+    if (
+      meal.packagingOptions.length > 0 &&
+      !customization?.packaging?.name
+    ) {
+      throw new BadRequestException(
+        "A packaging option is required for this meal",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    if (
+      meal.proteinOptions.length > 0 &&
+      !(customization?.proteinSelections?.length ||
+        customization?.customProteinRequests?.length)
+    ) {
+      throw new BadRequestException(
+        "A protein selection is required for this meal",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    if (!customization) {
+      return undefined;
+    }
+
+    return {
+      packaging: customization.packaging
+        ? {
+            name: customization.packaging.name,
+            price: resolveOptionPrice(
+              meal.packagingOptions,
+              customization.packaging.name,
+            ),
+          }
+        : undefined,
+      spiceLevel: customization.spiceLevel,
+      proteinSelections: customization.proteinSelections?.map(
+        (selection) => ({
+          name: selection.name,
+          price: resolveOptionPrice(meal.proteinOptions, selection.name),
+          quantity: selection.quantity ?? 1,
+        }),
+      ),
+      addOnSelections: customization.addOnSelections?.map((selection) => ({
+        name: selection.name,
+        price: resolveOptionPrice(meal.addOns, selection.name),
+      })),
+      drinkSelections: customization.drinkSelections?.map((selection) => ({
+        name: selection.name,
+        price: resolveOptionPrice(meal.drinksOptions, selection.name),
+        quantity: selection.quantity ?? 1,
+      })),
+      customProteinRequests: customization.customProteinRequests,
+      customAddOnRequests: customization.customAddOnRequests,
+      customDrinkRequests: customization.customDrinkRequests,
+      cookingInstructions: customization.cookingInstructions,
+    };
+  };
+
   ensureSingleVendorCart = async (
     session: ClientSession,
     cart: CartDocument,
@@ -41,7 +127,9 @@ class CartBase {
 
   calculateTotalAmount = (cart: CartDocument) => {
     cart.meals.forEach((meal) => {
-      meal.totalPrice = meal.price * meal.quantity;
+      const delta = computeCustomizationDelta(meal.customization);
+      meal.effectiveUnitPrice = meal.price + delta;
+      meal.totalPrice = meal.effectiveUnitPrice * meal.quantity;
     });
 
     cart.totalAmount = cart.meals.reduce(
@@ -56,6 +144,7 @@ class CartBase {
     mealId: string,
     quantity: number = 1,
     action: CartAction,
+    customization?: MealCustomization,
   ) => {
     if (!customerId) {
       throw new BadRequestException(
@@ -80,9 +169,17 @@ class CartBase {
       );
     }
 
+    const resolvedCustomization =
+      action === CartActions.add
+        ? this.resolveCustomization(meal, customization)
+        : undefined;
+
     let cart = await Cart.findOne({ customerId }).session(session);
 
     if (!cart) {
+      const effectiveUnitPrice =
+        meal.price + computeCustomizationDelta(resolvedCustomization);
+
       [cart] = await Cart.create(
         [
           {
@@ -92,10 +189,12 @@ class CartBase {
                 mealId: mealId as unknown as mongoose.Types.ObjectId,
                 price: meal.price,
                 quantity,
-                totalPrice: meal.price * quantity,
+                totalPrice: effectiveUnitPrice * quantity,
+                effectiveUnitPrice,
+                customization: resolvedCustomization,
               },
             ],
-            totalAmount: meal.price * quantity,
+            totalAmount: effectiveUnitPrice * quantity,
           },
         ],
         { session },
@@ -113,7 +212,7 @@ class CartBase {
       );
     }
 
-    action(cart, meal, quantity);
+    action(cart, meal, quantity, resolvedCustomization);
     this.calculateTotalAmount(cart);
     await cart.save();
     return cart;
@@ -127,6 +226,7 @@ export class CartService extends CartBase {
       customerId: string,
       mealId: string,
       quantity: number = 1,
+      customization?: MealCustomization,
     ) =>
       await this.modifyCart(
         session,
@@ -134,6 +234,7 @@ export class CartService extends CartBase {
         mealId,
         quantity,
         CartActions.add,
+        customization,
       ),
   );
 

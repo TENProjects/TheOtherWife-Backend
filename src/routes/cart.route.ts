@@ -5,6 +5,7 @@ import { CartController } from "../controllers/cart.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
 import { zodValidation } from "../middlewares/validation.js";
+import { addToCartSchema } from "../zod-schema/cart.schema.js";
 
 /**
  * @openapi
@@ -50,6 +51,12 @@ import { zodValidation } from "../middlewares/validation.js";
  * /api/v1/carts/{mealId}:
  *   put:
  *     summary: Add meal to cart
+ *     description: >-
+ *       If the meal has packagingOptions and/or proteinOptions configured,
+ *       customization.packaging and customization.proteinSelections (or
+ *       customization.customProteinRequests) are required. Submitted option
+ *       prices are ignored — the server always resolves the authoritative
+ *       price from the meal's current option lists.
  *     tags: [Cart]
  *     parameters:
  *       - in: path
@@ -58,6 +65,12 @@ import { zodValidation } from "../middlewares/validation.js";
  *         schema:
  *           type: string
  *         description: The meal ID
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: "#/components/schemas/AddToCartRequest"
  *     responses:
  *       "200":
  *         description: Meal added to cart successfully
@@ -238,7 +251,11 @@ export class CartRouter {
 
   initializeRoutes() {
     this.router.get("/me", this.cartController.getUserCart);
-    this.router.put("/:mealId", this.cartController.addToCart);
+    this.router.put(
+      "/:mealId",
+      zodValidation(addToCartSchema),
+      this.cartController.addToCart,
+    );
     this.router.patch("/:mealId", this.cartController.incrementCart);
     this.router.patch("/:mealId/decrement", this.cartController.decrementCart);
     this.router.delete("/:mealId", this.cartController.removeFromCart);

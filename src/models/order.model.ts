@@ -1,6 +1,7 @@
 /** @format */
 
 import mongoose, { Document, Schema, model } from "mongoose";
+import type { MealCustomization } from "../util/meal-customization.util.js";
 
 export interface OrderItem {
   mealId: mongoose.Types.ObjectId;
@@ -8,6 +9,7 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  customization?: MealCustomization;
 }
 
 export interface OrderAddressSnapshot {
@@ -87,6 +89,48 @@ const OrderSchema = new Schema(
         lineTotal: {
           type: Number,
           required: true,
+        },
+        customization: {
+          type: {
+            packaging: {
+              name: { type: String },
+              price: { type: Number },
+            },
+            spiceLevel: {
+              type: String,
+              enum: ["mild", "medium", "hot", "extra"],
+            },
+            proteinSelections: [
+              {
+                name: { type: String, required: true },
+                price: { type: Number, required: true },
+                quantity: { type: Number, default: 1 },
+              },
+            ],
+            addOnSelections: [
+              {
+                name: { type: String, required: true },
+                price: { type: Number, required: true },
+              },
+            ],
+            drinkSelections: [
+              {
+                name: { type: String, required: true },
+                price: { type: Number, required: true },
+                quantity: { type: Number, default: 1 },
+              },
+            ],
+            customProteinRequests: { type: [String], default: undefined },
+            customAddOnRequests: { type: [String], default: undefined },
+            customDrinkRequests: { type: [String], default: undefined },
+            cookingInstructions: {
+              presets: { type: [String], default: undefined },
+              note: { type: String, maxlength: 500 },
+            },
+          },
+          required: false,
+          default: undefined,
+          _id: false,
         },
       },
     ],
