@@ -706,16 +706,16 @@ export class Seeder {
     await Favourites.create(
       [
         {
-          customerId: customers[0]._id,
-          favouriteMeals: [{ mealId: meals[0]._id }, { mealId: meals[4]._id }],
+          customerId: users.customers[0]._id,
+          favouriteMeals: [meals[0]._id, meals[4]._id],
         },
         {
-          customerId: customers[1]._id,
-          favouriteMeals: [{ mealId: meals[3]._id }, { mealId: meals[6]._id }],
+          customerId: users.customers[1]._id,
+          favouriteMeals: [meals[3]._id, meals[6]._id],
         },
         {
-          customerId: customers[2]._id,
-          favouriteMeals: [{ mealId: meals[1]._id }],
+          customerId: users.customers[2]._id,
+          favouriteMeals: [meals[1]._id],
         },
       ],
       { session, ordered: true },
