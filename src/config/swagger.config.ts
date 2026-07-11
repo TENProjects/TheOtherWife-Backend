@@ -56,6 +56,26 @@ const swaggerDefinition = {
           },
         },
       },
+      MealOption: {
+        type: "object",
+        required: ["name", "price"],
+        properties: {
+          _id: {
+            type: "string",
+            description:
+              "Stable identifier for this option, assigned by the server. Useful for referencing a specific option when submitting a selection.",
+          },
+          name: {
+            type: "string",
+            description: "The option name, e.g. 'Big Pack' or 'Beef'",
+          },
+          price: {
+            type: "number",
+            minimum: 0,
+            description: "The additional price charged for this option",
+          },
+        },
+      },
       Meal: {
         type: "object",
         properties: {
@@ -73,7 +93,7 @@ const swaggerDefinition = {
           },
           price: {
             type: "number",
-            description: "The meal price",
+            description: "The meal base price",
           },
           categoryName: {
             type: "string",
@@ -101,6 +121,56 @@ const swaggerDefinition = {
             },
             description: "The tags of the meal",
           },
+          preparationType: {
+            type: "string",
+            enum: ["freshly_cooked", "cook_and_freeze", "both"],
+            description: "How the meal is prepared. Required when creating a meal.",
+          },
+          availability: {
+            type: "string",
+            enum: ["daily", "weekly", "custom"],
+            default: "daily",
+            description: "How often this meal is available for ordering.",
+          },
+          availabilitySchedule: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Day names the meal is available on. Only used when availability is 'weekly'.",
+            example: ["monday", "wednesday", "friday"],
+          },
+          availabilityNote: {
+            type: "string",
+            description:
+              "Free-form note describing availability. Only used when availability is 'custom'.",
+          },
+          packagingOptions: {
+            type: "array",
+            items: { $ref: "#/components/schemas/MealOption" },
+            description: "Vendor-defined packaging choices. Required on the customer meal-details/add-to-cart flow when non-empty.",
+          },
+          proteinOptions: {
+            type: "array",
+            items: { $ref: "#/components/schemas/MealOption" },
+            description: "Vendor-defined protein choices. Required on the customer meal-details/add-to-cart flow when non-empty.",
+          },
+          drinksOptions: {
+            type: "array",
+            items: { $ref: "#/components/schemas/MealOption" },
+            description: "Vendor-defined drink choices (optional for the customer).",
+          },
+          addOns: {
+            type: "array",
+            items: { $ref: "#/components/schemas/MealOption" },
+            description: "Vendor-defined add-on choices (optional for the customer).",
+          },
+          spiceLevels: {
+            type: "array",
+            items: { type: "string", enum: ["mild", "medium", "hot", "extra"] },
+            description:
+              "Fixed, non-persisted set of spice-level choices offered on the meal-details screen (not vendor-priced).",
+            example: ["mild", "medium", "hot", "extra"],
+          },
           ratingAverage: {
             type: "number",
             description: "The average rating for the meal",
@@ -113,6 +183,20 @@ const swaggerDefinition = {
             type: "number",
             description: "Weighted score derived from the meal ratings",
           },
+        },
+      },
+      Favourites: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          customerId: { type: "string" },
+          favouriteMeals: {
+            type: "array",
+            items: { type: "string" },
+            description: "Meal IDs the customer has favourited",
+          },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
         },
       },
       Customer: {
@@ -536,9 +620,269 @@ const swaggerDefinition = {
         type: "object",
         properties: {
           mealId: { type: "string" },
-          price: { type: "number" },
+          price: {
+            type: "number",
+            description: "Base meal price, excluding any customization.",
+          },
           quantity: { type: "number" },
-          totalPrice: { type: "number" },
+          effectiveUnitPrice: {
+            type: "number",
+            description: "Base price plus the resolved customization delta.",
+          },
+          totalPrice: {
+            type: "number",
+            description: "effectiveUnitPrice multiplied by quantity.",
+          },
+          customization: { $ref: "#/components/schemas/MealCustomization" },
+        },
+      },
+      MealCustomizationSelection: {
+        type: "object",
+        required: ["name"],
+        properties: {
+          name: { type: "string", description: "Must match an option name on the meal" },
+          price: {
+            type: "number",
+            description:
+              "Client-submitted price is ignored; the server always resolves the authoritative price from the meal's current options.",
+          },
+        },
+      },
+      MealCustomizationSelectionWithQuantity: {
+        allOf: [
+          { $ref: "#/components/schemas/MealCustomizationSelection" },
+          {
+            type: "object",
+            properties: {
+              quantity: { type: "number", minimum: 1, default: 1 },
+            },
+          },
+        ],
+      },
+      MealCustomization: {
+        type: "object",
+        description:
+          "A customer's selected packaging/protein/add-on/drink choices for a single meal line, plus any free-text custom requests and cooking instructions.",
+        properties: {
+          packaging: { $ref: "#/components/schemas/MealCustomizationSelection" },
+          spiceLevel: {
+            type: "string",
+            enum: ["mild", "medium", "hot", "extra"],
+          },
+          proteinSelections: {
+            type: "array",
+            items: { $ref: "#/components/schemas/MealCustomizationSelectionWithQuantity" },
+          },
+          addOnSelections: {
+            type: "array",
+            items: { $ref: "#/components/schemas/MealCustomizationSelection" },
+          },
+          drinkSelections: {
+            type: "array",
+            items: { $ref: "#/components/schemas/MealCustomizationSelectionWithQuantity" },
+          },
+          customProteinRequests: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Free-text protein requests not in the meal's protein list. No price — the vendor confirms availability/price manually.",
+          },
+          customAddOnRequests: {
+            type: "array",
+            items: { type: "string" },
+            description: "Free-text add-on requests. No price — vendor confirms manually.",
+          },
+          customDrinkRequests: {
+            type: "array",
+            items: { type: "string" },
+            description: "Free-text drink requests. No price — vendor confirms manually.",
+          },
+          cookingInstructions: {
+            type: "object",
+            properties: {
+              presets: {
+                type: "array",
+                items: { type: "string" },
+                description: "Selected quick-preference chips, e.g. 'No onions', 'Well-done'.",
+              },
+              note: {
+                type: "string",
+                maxLength: 500,
+                description: "Free-text note to the chef.",
+              },
+            },
+          },
+        },
+      },
+      AddToCartRequest: {
+        type: "object",
+        properties: {
+          quantity: { type: "number", minimum: 1, default: 1 },
+          customization: {
+            $ref: "#/components/schemas/MealCustomization",
+            description:
+              "Required to include a packaging selection when the meal has packaging options, and a protein selection (or customProteinRequests entry) when the meal has protein options.",
+          },
+        },
+      },
+      MealPlanFrequency: {
+        type: "string",
+        enum: ["daily", "weekdays", "weekends", "custom"],
+      },
+      MealPlanPortionSize: {
+        type: "string",
+        enum: ["small", "regular", "large"],
+      },
+      MealPlanPaymentType: {
+        type: "string",
+        enum: ["weekly", "monthly", "per_meal"],
+      },
+      MealPlanStatus: {
+        type: "string",
+        enum: ["active", "cancelled"],
+      },
+      ScheduledMealStatus: {
+        type: "string",
+        enum: ["scheduled", "cancelled", "completed"],
+      },
+      DeliveryTimeWindow: {
+        type: "object",
+        required: ["startTime", "endTime"],
+        properties: {
+          startTime: { type: "string", example: "12:00", description: "24h HH:mm" },
+          endTime: { type: "string", example: "14:00", description: "24h HH:mm" },
+        },
+      },
+      MealPlanCustomization: {
+        type: "object",
+        required: ["portionSize"],
+        properties: {
+          portionSize: { $ref: "#/components/schemas/MealPlanPortionSize" },
+          note: {
+            type: "string",
+            maxLength: 500,
+            description: "Free-text note to the chef, e.g. allergies or preferences",
+          },
+        },
+      },
+      MealPlan: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          customerId: { type: "string" },
+          vendorId: {
+            type: "string",
+            nullable: true,
+            description: "Set once the first meal is added to the plan; all meals in a plan must share one vendor.",
+          },
+          name: { type: "string" },
+          frequency: { $ref: "#/components/schemas/MealPlanFrequency" },
+          customDays: {
+            type: "array",
+            items: { type: "string" },
+            description: "Weekday names, used when frequency is 'custom'",
+          },
+          startDate: { type: "string", format: "date-time" },
+          endDate: { type: "string", format: "date-time" },
+          deliveryTimeWindow: { $ref: "#/components/schemas/DeliveryTimeWindow" },
+          defaultCustomization: { $ref: "#/components/schemas/MealPlanCustomization" },
+          paymentType: { $ref: "#/components/schemas/MealPlanPaymentType" },
+          status: { $ref: "#/components/schemas/MealPlanStatus" },
+          currency: { type: "string", example: "NGN" },
+          mealsScheduledCount: {
+            type: "number",
+            description: "Computed: count of non-cancelled scheduled meals in this plan",
+          },
+          totalAmount: {
+            type: "number",
+            description: "Computed: sum of price across non-cancelled scheduled meals",
+          },
+          estimatedTotal: {
+            type: "number",
+            description: "Computed: totalAmount with a 10% discount applied when paymentType is 'monthly'",
+          },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      ScheduledMeal: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          planId: { type: "string" },
+          customerId: { type: "string" },
+          vendorId: { type: "string" },
+          mealId: { type: "string" },
+          mealName: { type: "string", description: "Snapshot of the meal name at scheduling time" },
+          mealImageUrl: { type: "string" },
+          price: { type: "number", description: "Snapshot of the meal price at scheduling time" },
+          deliveryDate: { type: "string", format: "date-time" },
+          deliveryTimeWindow: { $ref: "#/components/schemas/DeliveryTimeWindow" },
+          customization: { $ref: "#/components/schemas/MealPlanCustomization" },
+          status: { $ref: "#/components/schemas/ScheduledMealStatus" },
+          cancelledAt: { type: "string", format: "date-time", nullable: true },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      CreateMealPlanRequest: {
+        type: "object",
+        required: [
+          "name",
+          "frequency",
+          "startDate",
+          "endDate",
+          "deliveryTimeWindow",
+          "defaultCustomization",
+          "paymentType",
+        ],
+        properties: {
+          name: { type: "string", example: "Office Lunch Plan" },
+          frequency: { $ref: "#/components/schemas/MealPlanFrequency" },
+          customDays: {
+            type: "array",
+            items: { type: "string" },
+            description: "Required when frequency is 'custom'",
+          },
+          startDate: { type: "string", format: "date" },
+          endDate: { type: "string", format: "date" },
+          deliveryTimeWindow: { $ref: "#/components/schemas/DeliveryTimeWindow" },
+          defaultCustomization: { $ref: "#/components/schemas/MealPlanCustomization" },
+          paymentType: { $ref: "#/components/schemas/MealPlanPaymentType" },
+        },
+      },
+      UpdateMealPlanRequest: {
+        type: "object",
+        description: "All fields optional; at least one required. Only updates plan-level settings — does not regenerate or alter already-scheduled meals.",
+        properties: {
+          name: { type: "string" },
+          frequency: { $ref: "#/components/schemas/MealPlanFrequency" },
+          customDays: { type: "array", items: { type: "string" } },
+          startDate: { type: "string", format: "date" },
+          endDate: { type: "string", format: "date" },
+          deliveryTimeWindow: { $ref: "#/components/schemas/DeliveryTimeWindow" },
+          defaultCustomization: { $ref: "#/components/schemas/MealPlanCustomization" },
+          paymentType: { $ref: "#/components/schemas/MealPlanPaymentType" },
+        },
+      },
+      AddMealToPlanRequest: {
+        type: "object",
+        required: ["mealId"],
+        properties: {
+          mealId: { type: "string" },
+          customization: {
+            allOf: [{ $ref: "#/components/schemas/MealPlanCustomization" }],
+            description: "Defaults to the plan's defaultCustomization when omitted",
+          },
+        },
+      },
+      UpdateScheduledMealRequest: {
+        type: "object",
+        description: "All fields optional; at least one required. Rejected with 400 if less than 12 hours remain before the current delivery date/time.",
+        properties: {
+          deliveryDate: { type: "string", format: "date" },
+          deliveryTimeWindow: { $ref: "#/components/schemas/DeliveryTimeWindow" },
+          customization: { $ref: "#/components/schemas/MealPlanCustomization" },
         },
       },
       UserType: {

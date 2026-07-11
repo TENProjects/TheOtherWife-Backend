@@ -1,0 +1,119 @@
+/** @format */
+
+import mongoose, { Document, Schema, model } from "mongoose";
+import type {
+  MealPlanCustomization,
+  MealPlanTimeWindow,
+} from "./mealPlan.model.js";
+
+export interface ScheduledMealDocument extends Document {
+  planId: mongoose.Types.ObjectId;
+  customerId: mongoose.Types.ObjectId;
+  vendorId: mongoose.Types.ObjectId;
+  mealId: mongoose.Types.ObjectId;
+  mealName: string;
+  mealImageUrl?: string;
+  price: number;
+  deliveryDate: Date;
+  deliveryTimeWindow: MealPlanTimeWindow;
+  customization: MealPlanCustomization;
+  status: "scheduled" | "cancelled" | "completed";
+  cancelledAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const ScheduledMealTimeWindowSchema = new Schema(
+  {
+    startTime: { type: String, required: true },
+    endTime: { type: String, required: true },
+  },
+  { _id: false },
+);
+
+const ScheduledMealCustomizationSchema = new Schema(
+  {
+    portionSize: {
+      type: String,
+      enum: ["small", "regular", "large"],
+      required: true,
+    },
+    note: {
+      type: String,
+      required: false,
+      maxlength: 500,
+    },
+  },
+  { _id: false },
+);
+
+const ScheduledMealSchema = new Schema(
+  {
+    planId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MealPlan",
+      required: true,
+      index: true,
+    },
+    customerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+    vendorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Vendor",
+      required: true,
+    },
+    mealId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Meal",
+      required: true,
+    },
+    mealName: {
+      type: String,
+      required: true,
+    },
+    mealImageUrl: {
+      type: String,
+      required: false,
+    },
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    deliveryDate: {
+      type: Date,
+      required: true,
+    },
+    deliveryTimeWindow: {
+      type: ScheduledMealTimeWindowSchema,
+      required: true,
+    },
+    customization: {
+      type: ScheduledMealCustomizationSchema,
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["scheduled", "cancelled", "completed"],
+      required: true,
+      default: "scheduled",
+    },
+    cancelledAt: {
+      type: Date,
+      required: false,
+    },
+  },
+  { timestamps: true },
+);
+
+ScheduledMealSchema.index({ planId: 1, deliveryDate: 1 });
+ScheduledMealSchema.index({ customerId: 1, status: 1, deliveryDate: 1 });
+
+export default model<ScheduledMealDocument>(
+  "ScheduledMeal",
+  ScheduledMealSchema,
+);

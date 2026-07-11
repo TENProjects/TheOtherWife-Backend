@@ -14,6 +14,7 @@ import { SearchRadiusService } from "./search-radius.service.js";
 import { isVendorReceivingOrders } from "../util/vendor-opening-hours.util.js";
 import Order from "../models/order.model.js";
 import MealReview from "../models/mealReview.model.js";
+import { spiceLevels } from "../util/spice-level.util.js";
 
 export class MealService {
   private searchRadiusService: SearchRadiusService;
@@ -165,6 +166,14 @@ export class MealService {
         primaryImageUrl: string;
         tags: string[];
         publicationStatus?: "draft" | "published";
+        preparationType: "freshly_cooked" | "cook_and_freeze" | "both";
+        availability?: "daily" | "weekly" | "custom";
+        availabilitySchedule?: string[];
+        availabilityNote?: string;
+        packagingOptions: { name: string; price: number }[];
+        proteinOptions: { name: string; price: number }[];
+        drinksOptions?: { name: string; price: number }[];
+        addOns?: { name: string; price: number }[];
       },
     ) => {
       const {
@@ -175,6 +184,14 @@ export class MealService {
         primaryImageUrl,
         tags,
         publicationStatus,
+        preparationType,
+        availability,
+        availabilitySchedule,
+        availabilityNote,
+        packagingOptions,
+        proteinOptions,
+        drinksOptions,
+        addOns,
       } = mealData;
 
       const vendor = await Vendor.findOne({ userId }).session(session);
@@ -212,6 +229,14 @@ export class MealService {
             primaryImageUrl,
             tags,
             publicationStatus: publicationStatus ?? "draft",
+            preparationType,
+            availability: availability ?? "daily",
+            availabilitySchedule,
+            availabilityNote,
+            packagingOptions,
+            proteinOptions,
+            drinksOptions: drinksOptions ?? [],
+            addOns: addOns ?? [],
           },
         ],
         { session },
@@ -247,6 +272,14 @@ export class MealService {
         additionalData?: string;
         isAvailable?: boolean;
         publicationStatus?: "draft" | "published";
+        preparationType?: "freshly_cooked" | "cook_and_freeze" | "both";
+        availability?: "daily" | "weekly" | "custom";
+        availabilitySchedule?: string[];
+        availabilityNote?: string;
+        packagingOptions?: { name: string; price: number }[];
+        proteinOptions?: { name: string; price: number }[];
+        drinksOptions?: { name: string; price: number }[];
+        addOns?: { name: string; price: number }[];
       },
     ) => {
       if (!mealId) {
@@ -316,6 +349,21 @@ export class MealService {
         meal.isAvailable = mealData.isAvailable;
       if (mealData.publicationStatus !== undefined)
         meal.publicationStatus = mealData.publicationStatus;
+      if (mealData.preparationType !== undefined)
+        meal.preparationType = mealData.preparationType;
+      if (mealData.availability !== undefined)
+        meal.availability = mealData.availability;
+      if (mealData.availabilitySchedule !== undefined)
+        meal.availabilitySchedule = mealData.availabilitySchedule;
+      if (mealData.availabilityNote !== undefined)
+        meal.availabilityNote = mealData.availabilityNote;
+      if (mealData.packagingOptions !== undefined)
+        meal.packagingOptions = mealData.packagingOptions;
+      if (mealData.proteinOptions !== undefined)
+        meal.proteinOptions = mealData.proteinOptions;
+      if (mealData.drinksOptions !== undefined)
+        meal.drinksOptions = mealData.drinksOptions;
+      if (mealData.addOns !== undefined) meal.addOns = mealData.addOns;
 
       await meal.save({ session });
 
@@ -552,6 +600,15 @@ export class MealService {
         preparationTime: meal.preparationTime,
         servingSize: meal.servingSize,
         additionalData: meal.additionalData,
+        preparationType: meal.preparationType,
+        availability: meal.availability,
+        availabilitySchedule: meal.availabilitySchedule,
+        availabilityNote: meal.availabilityNote,
+        packagingOptions: meal.packagingOptions,
+        proteinOptions: meal.proteinOptions,
+        drinksOptions: meal.drinksOptions,
+        addOns: meal.addOns,
+        spiceLevels,
       },
       vendor: {
         _id: vendorDocument?._id,

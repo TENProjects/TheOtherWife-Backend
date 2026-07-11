@@ -42,6 +42,46 @@ const parseStringArrayField = (
 
 const nonEmptyStringArraySchema = z.array(z.string().trim().min(1));
 
+const parseJsonArrayField = (value: unknown): unknown => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+};
+
+const mealOptionSchema = z.object({
+  name: z.string().trim().min(1),
+  price: z.coerce.number().min(0),
+});
+
+const mealOptionArraySchema = z.array(mealOptionSchema);
+
+const preparationTypeSchema = z.enum([
+  "freshly_cooked",
+  "cook_and_freeze",
+  "both",
+]);
+
+const availabilitySchema = z.enum(["daily", "weekly", "custom"]);
+
 export const createMealReviewSchema = z.object({
   orderId: z.string().trim().min(1),
   rating: z.number().int().min(1).max(5),
@@ -56,6 +96,26 @@ export const createMealSchema = z.object({
   primaryImageUrl: cloudinaryAssetUrlSchema.optional(),
   tags: z.preprocess(parseStringArrayField, nonEmptyStringArraySchema).default([]),
   publicationStatus: z.enum(["draft", "published"]).optional(),
+  preparationType: preparationTypeSchema,
+  availability: availabilitySchema.default("daily"),
+  availabilitySchedule: z
+    .preprocess(parseStringArrayField, nonEmptyStringArraySchema)
+    .optional(),
+  availabilityNote: z.string().trim().max(500).optional(),
+  packagingOptions: z
+    .preprocess(parseJsonArrayField, mealOptionArraySchema)
+    .refine((options) => options.length > 0, {
+      message: "At least one packaging option is required",
+    }),
+  proteinOptions: z
+    .preprocess(parseJsonArrayField, mealOptionArraySchema)
+    .refine((options) => options.length > 0, {
+      message: "At least one protein option is required",
+    }),
+  drinksOptions: z
+    .preprocess(parseJsonArrayField, mealOptionArraySchema)
+    .default([]),
+  addOns: z.preprocess(parseJsonArrayField, mealOptionArraySchema).default([]),
 });
 
 export const updateMealSchema = z
@@ -74,6 +134,22 @@ export const updateMealSchema = z
     additionalData: z.string().trim().optional(),
     isAvailable: z.coerce.boolean().optional(),
     publicationStatus: z.enum(["draft", "published"]).optional(),
+    preparationType: preparationTypeSchema.optional(),
+    availability: availabilitySchema.optional(),
+    availabilitySchedule: z
+      .preprocess(parseStringArrayField, nonEmptyStringArraySchema)
+      .optional(),
+    availabilityNote: z.string().trim().max(500).optional(),
+    packagingOptions: z
+      .preprocess(parseJsonArrayField, mealOptionArraySchema)
+      .optional(),
+    proteinOptions: z
+      .preprocess(parseJsonArrayField, mealOptionArraySchema)
+      .optional(),
+    drinksOptions: z
+      .preprocess(parseJsonArrayField, mealOptionArraySchema)
+      .optional(),
+    addOns: z.preprocess(parseJsonArrayField, mealOptionArraySchema).optional(),
   })
   .refine(
     (value) => Object.values(value).some((field) => field !== undefined),
