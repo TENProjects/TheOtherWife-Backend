@@ -1,6 +1,7 @@
 /** @format */
 
 import Order from "../models/order.model.js";
+import Meal from "../models/meal.model.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
 import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
@@ -23,6 +24,35 @@ export class OrderService {
     return vendor;
   };
 
+  // Attaches each item's meal image as a sibling `mealImage` field, looked up
+  // separately by mealId, so the existing `items.mealId: string` response
+  // contract (used elsewhere for order acceptance/reorder/etc.) is never touched.
+  private attachMealImages = async (orders: any[]) => {
+    const mealIds = Array.from(
+      new Set(
+        orders.flatMap((order) =>
+          (order.items || []).map((item: any) => String(item.mealId)),
+        ),
+      ),
+    );
+
+    const meals = await Meal.find({ _id: { $in: mealIds } }).select(
+      "primaryImageUrl",
+    );
+    const imageByMealId = new Map(
+      meals.map((meal) => [String(meal._id), meal.primaryImageUrl]),
+    );
+
+    return orders.map((order) => {
+      const obj = order.toObject ? order.toObject() : order;
+      obj.items = (obj.items || []).map((item: any) => ({
+        ...item,
+        mealImage: imageByMealId.get(String(item.mealId)),
+      }));
+      return obj;
+    });
+  };
+
   getUserOrders = async (customerId: string) => {
     if (!customerId) {
       throw new BadRequestException(
@@ -34,7 +64,7 @@ export class OrderService {
 
     const orders = await Order.find({ customerId }).sort({ createdAt: -1 });
 
-    return { orders };
+    return { orders: await this.attachMealImages(orders) };
   };
 
   getUserOrderById = async (customerId: string, orderId: string) => {
@@ -48,7 +78,9 @@ export class OrderService {
       );
     }
 
-    return { order };
+    const [enriched] = await this.attachMealImages([order]);
+
+    return { order: enriched };
   };
 
   getVendorOrders = async (userId: string) => {
