@@ -9,6 +9,15 @@ export const nodeEnv: string = envconfig.NODE_ENV;
 export const jwtSecret: string = envconfig.JWT_SECRET;
 export const jwtRefreshSecret: string = envconfig.JWT_REFRESH_SECRET;
 export const googleClientId: string = envconfig.GOOGLE_CLIENT_ID;
+// Google issues a distinct OAuth client (and thus a distinct `aud` claim) per
+// platform. verifyIdToken must allow-list all of them, or tokens minted by
+// the Android/iOS native client will be rejected when only the web client id
+// is configured as the audience.
+export const googleAudiences: string[] = [
+  envconfig.GOOGLE_CLIENT_ID,
+  envconfig.GOOGLE_ANDROID_CLIENT_ID,
+  envconfig.GOOGLE_IOS_CLIENT_ID,
+].filter((id): id is string => !!id);
 export const corsOrigin: string | string[] | undefined = envconfig.CORS_ORIGIN
   ? envconfig.CORS_ORIGIN.split(",").map((origin) => origin.trim())
   : undefined;

@@ -17,6 +17,8 @@ type EnvConfig = {
   JWT_SECRET: string;
   JWT_REFRESH_SECRET: string;
   GOOGLE_CLIENT_ID: string;
+  GOOGLE_ANDROID_CLIENT_ID?: string;
+  GOOGLE_IOS_CLIENT_ID?: string;
   CORS_ORIGIN?: string;
   RESEND_API_KEY: string;
   FROM: string;
@@ -38,12 +40,14 @@ const getEnvConfig = (): EnvConfig => {
 
   return {
     PORT: getEnv("PORT") || "8000",
-    HOST_NAME: getEnv("HOST_NAME") || "https://the-other-wife.vercel.app/",
+    HOST_NAME: getEnv("HOST_NAME") || "https://the-other-wife-backend.vercel.app",
     MONGODB_URI: getEnv("MONGODB_URI") || "mongodb://localhost:27017",
     NODE_ENV: getEnv("NODE_ENV") || "development",
     JWT_SECRET: getEnv("JWT_SECRET") || "secret",
     JWT_REFRESH_SECRET: getEnv("JWT_REFRESH_SECRET") || "refresh_secret",
     GOOGLE_CLIENT_ID: getEnv("GOOGLE_CLIENT_ID"),
+    GOOGLE_ANDROID_CLIENT_ID: getEnv("GOOGLE_ANDROID_CLIENT_ID"),
+    GOOGLE_IOS_CLIENT_ID: getEnv("GOOGLE_IOS_CLIENT_ID"),
     CORS_ORIGIN: getEnv("CORS_ORIGIN") || "",
     RESEND_API_KEY: getEnv("RESEND_API_KEY"),
     FROM: getEnv("FROM"),

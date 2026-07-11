@@ -22,6 +22,7 @@ import {
 import {
   frontendUrl,
   googleClientId,
+  googleAudiences,
   jwtRefreshSecret,
   nodeEnv,
   resetPasswordTokenTtlMinutes,
@@ -365,7 +366,7 @@ export class AuthService {
       refreshToken: string;
       [key: string]: any;
     }> => {
-      if (!googleClientId) {
+      if (googleAudiences.length === 0) {
         throw new BadRequestException(
           "Google sign-in is not configured",
           HttpStatus.BAD_REQUEST,
@@ -373,9 +374,11 @@ export class AuthService {
         );
       }
 
+      // Each platform (web/Android/iOS) mints its id_token against its own
+      // OAuth client, so all configured client ids must be allow-listed here.
       const ticket = await this.googleOauthClient.verifyIdToken({
         idToken,
-        audience: googleClientId,
+        audience: googleAudiences,
       });
 
       const payload = ticket.getPayload();
