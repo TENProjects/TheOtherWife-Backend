@@ -344,7 +344,7 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  * /api/v1/vendors/approve/{id}:
  *   put:
  *     summary: Approve vendor
- *     tags: [Vendor]
+ *     tags: [Admin]
  *     parameters:
  *       - in: path
  *         name: id
@@ -392,7 +392,7 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  * /api/v1/vendors/reject/{id}:
  *   put:
  *     summary: Reject vendor
- *     tags: [Vendor]
+ *     tags: [Admin]
  *     parameters:
  *       - in: path
  *         name: id
@@ -452,7 +452,7 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  * /api/v1/vendors/suspend/{id}:
  *   put:
  *     summary: Suspend vendor
- *     tags: [Vendor]
+ *     tags: [Admin]
  *     parameters:
  *       - in: path
  *         name: id

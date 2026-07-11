@@ -1099,6 +1099,19 @@ const swaggerDefinition = {
           createdAt: { type: "string", format: "date-time" },
         },
       },
+      PaymentGatewayConfig: {
+        type: "object",
+        properties: {
+          key: { type: "string", enum: ["paystack", "flutterwave", "stripe"] },
+          name: { type: "string" },
+          transactionFeePercent: { type: "number" },
+          isActive: {
+            type: "boolean",
+            description:
+              "Only 'paystack' has a real payment integration — this flag is admin-facing configuration only for the other gateways.",
+          },
+        },
+      },
       ErrorResponse: {
         type: "object",
         properties: {

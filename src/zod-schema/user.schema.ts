@@ -23,3 +23,11 @@ export const createAdminUserSchema = z
     message: "Email and phone number are required",
     path: ["email", "phoneNumber"],
   });
+
+export const assignCustomerGroupSchema = z.object({
+  group: z.string().trim().min(1),
+});
+
+export const updateCustomerAdminNotesSchema = z.object({
+  adminNotes: z.string().trim().max(2000),
+});

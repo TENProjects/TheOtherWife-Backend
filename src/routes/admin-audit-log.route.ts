@@ -11,7 +11,7 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  * /api/v1/admin/audit-logs:
  *   get:
  *     summary: List admin audit log entries (admin)
- *     tags: [Admin Audit Log]
+ *     tags: [Admin]
  *     parameters:
  *       - in: query
  *         name: action

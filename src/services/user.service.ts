@@ -65,13 +65,254 @@ export class UserService {
     return users;
   };
 
-  getAllCustomers = async () => {
-    const customers = await Customer.find()
-      .populate("userId", "-passwordHash")
-      .sort({ createdAt: -1 })
-      .limit(50);
+  // Internal enum <-> the capitalized labels the admin UI displays/sends.
+  private readonly customerGroupLabels: Record<string, string> = {
+    new: "New",
+    regular: "Regular",
+    vip: "VIP",
+    at_risk: "At Risk",
+    blocked: "Blocked",
+  };
 
-    return customers;
+  private normalizeCustomerGroup = (input: string): string => {
+    const key = input.trim().toLowerCase().replace(/[\s-]+/g, "_");
+    if (!(key in this.customerGroupLabels)) {
+      throw new BadRequestException(
+        `Invalid customer group "${input}". Must be one of: VIP, Regular, New, At Risk, Blocked`,
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+    return key;
+  };
+
+  // Escapes regex metacharacters in admin-supplied search input before it's
+  // used to build a RegExp, so a search query can't inject regex/ReDoS.
+  private escapeRegex = (value: string): string =>
+    value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  getAllCustomers = async (
+    filters: {
+      search?: string;
+      group?: string;
+      status?: string;
+      page?: number;
+      limit?: number;
+    } = {},
+  ) => {
+    const { search, group, status, page = 1, limit = 100 } = filters;
+    const safeLimit = Math.min(Math.max(limit, 1), 500);
+    const safePage = Math.max(page, 1);
+
+    const userMatch: Record<string, any> = {
+      userType: "customer",
+      status: { $ne: "deleted" },
+    };
+
+    if (status) {
+      const normalizedStatus = status.trim().toLowerCase();
+      if (!["active", "suspended", "deleted"].includes(normalizedStatus)) {
+        throw new BadRequestException(
+          "Invalid status filter",
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
+      userMatch.status = normalizedStatus;
+    }
+
+    if (search && search.trim()) {
+      const regex = new RegExp(this.escapeRegex(search.trim()), "i");
+      userMatch.$or = [
+        { firstName: regex },
+        { lastName: regex },
+        { email: regex },
+        { phoneNumber: regex },
+      ];
+    }
+
+    const matchingUsers = await User.find(userMatch).select("_id");
+    const userIds = matchingUsers.map((u) => u._id);
+
+    const customerMatch: Record<string, any> = { userId: { $in: userIds } };
+    if (group) {
+      customerMatch.customerGroup = this.normalizeCustomerGroup(group);
+    }
+
+    const customers = await Customer.find(customerMatch)
+      .populate("userId", "-passwordHash")
+      .populate("addressId");
+
+    const customerUserIds = customers
+      .map((customer) => (customer.userId as any)?._id)
+      .filter(Boolean);
+
+    const spendAggregation = await Order.aggregate<{
+      _id: any;
+      orders: number;
+      totalSpent: number;
+    }>([
+      { $match: { customerId: { $in: customerUserIds } } },
+      {
+        $group: {
+          _id: "$customerId",
+          orders: { $sum: 1 },
+          totalSpent: {
+            $sum: {
+              $cond: [
+                { $eq: ["$paymentStatus", "succeeded"] },
+                "$totalAmount",
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    const spendByCustomer = new Map(
+      spendAggregation.map((entry) => [entry._id.toString(), entry]),
+    );
+
+    const enriched = customers
+      .map((customer) => {
+        const user = customer.userId as any;
+        if (!user) return null;
+
+        const spend = spendByCustomer.get(user._id.toString());
+        const address = customer.addressId as any;
+
+        return {
+          _id: user._id.toString(),
+          customerId: customer._id.toString(),
+          name: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim(),
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          phone: user.phoneNumber ?? "",
+          location: address?.city ?? "",
+          orders: spend?.orders ?? 0,
+          totalSpent: spend?.totalSpent ?? 0,
+          group: this.customerGroupLabels[customer.customerGroup ?? "new"],
+          status:
+            user.status.charAt(0).toUpperCase() + user.status.slice(1),
+          adminNotes: customer.adminNotes ?? "",
+          createdAt: user.createdAt,
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null)
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const stats = {
+      totalCustomers: enriched.length,
+      activeCustomers: enriched.filter((c) => c.status === "Active").length,
+      vipCustomers: enriched.filter((c) => c.group === "VIP").length,
+      newThisMonth: enriched.filter(
+        (c) =>
+          new Date(c.createdAt).getTime() >= startOfThisMonth.getTime(),
+      ).length,
+    };
+
+    const total = enriched.length;
+    const totalPages = Math.max(Math.ceil(total / safeLimit), 1);
+    const start = (safePage - 1) * safeLimit;
+    const paginated = enriched.slice(start, start + safeLimit);
+
+    return {
+      customers: paginated,
+      stats,
+      pagination: { page: safePage, limit: safeLimit, total, totalPages },
+    };
+  };
+
+  assignCustomerGroup = async (userId: string, groupInput: string) => {
+    if (!userId) {
+      throw new BadRequestException(
+        "User ID is required",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const normalizedGroup = this.normalizeCustomerGroup(groupInput);
+
+    const customer = await Customer.findOneAndUpdate(
+      { userId },
+      { $set: { customerGroup: normalizedGroup } },
+      { new: true },
+    );
+
+    if (!customer) {
+      throw new NotFoundException(
+        "Customer not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    return {
+      _id: userId,
+      group: this.customerGroupLabels[normalizedGroup],
+    };
+  };
+
+  updateCustomerAdminNotes = async (userId: string, adminNotes: string) => {
+    if (!userId) {
+      throw new BadRequestException(
+        "User ID is required",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const customer = await Customer.findOneAndUpdate(
+      { userId },
+      { $set: { adminNotes: adminNotes ?? "" } },
+      { new: true },
+    );
+
+    if (!customer) {
+      throw new NotFoundException(
+        "Customer not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    return { _id: userId, adminNotes: customer.adminNotes };
+  };
+
+  // Looks up the target's email for an admin-triggered password reset, and
+  // guards against resetting a non-customer or already-deleted account.
+  getCustomerForPasswordReset = async (userId: string) => {
+    const user = await User.findOne({
+      _id: userId,
+      userType: "customer",
+    }).select("email status");
+
+    if (!user) {
+      throw new NotFoundException(
+        "Customer not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    if (user.status === "deleted") {
+      throw new BadRequestException(
+        "Cannot reset password for a deleted account",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    return user.email;
   };
 
   getAllVendors = async () => {

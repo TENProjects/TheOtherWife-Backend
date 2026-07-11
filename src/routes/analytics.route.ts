@@ -11,7 +11,7 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  * /api/v1/analytics:
  *   get:
  *     summary: Get admin analytics summary
- *     tags: [Analytics]
+ *     tags: [Admin]
  *     responses:
  *       "200":
  *         description: Admin analytics fetched successfully
@@ -59,7 +59,7 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  * /api/v1/analytics/orders:
  *   get:
  *     summary: Get admin orders analytics breakdown
- *     tags: [Analytics]
+ *     tags: [Admin]
  *     responses:
  *       "200":
  *         description: Admin order analytics fetched successfully

@@ -8,6 +8,8 @@ export interface CustomerDocument extends Document {
   profileImageUrl: string;
   expoTokens: string[];
   pushNotificationsEnabled: boolean;
+  customerGroup: "new" | "regular" | "vip" | "at_risk" | "blocked";
+  adminNotes: string;
 }
 
 const CustomerSchema = new Schema({
@@ -36,6 +38,19 @@ const CustomerSchema = new Schema({
     type: Boolean,
     required: true,
     default: true,
+  },
+  // Admin-assigned segmentation, set via the admin "Assign Customer Group"
+  // action — not derived automatically from order history.
+  customerGroup: {
+    type: String,
+    enum: ["new", "regular", "vip", "at_risk", "blocked"],
+    default: "new",
+    index: true,
+  },
+  adminNotes: {
+    type: String,
+    required: false,
+    default: "",
   },
 });
 

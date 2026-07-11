@@ -50,12 +50,112 @@ export class UserController {
   );
 
   getAllCustomers = handleAsyncControl(
-    async (_req: Request, res: Response): Promise<Response> => {
-      const customers = await this.userService.getAllCustomers();
+    async (req: Request, res: Response): Promise<Response> => {
+      const { search, group, status, page, limit } = req.query;
+      const result = await this.userService.getAllCustomers({
+        search: search as string | undefined,
+        group: group as string | undefined,
+        status: status as string | undefined,
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      });
       return res.status(HttpStatus.OK).json({
-        data: customers,
+        data: result,
         status: "ok",
         message: "Customers fetched successfully",
+      } as ApiResponse);
+    },
+  );
+
+  assignCustomerGroup = handleAsyncControl(
+    async (
+      req: Request<{ userId: string }, {}, { group: string }>,
+      res: Response,
+    ): Promise<Response> => {
+      const { userId } = req.params;
+      const { group } = req.body;
+      const adminUserId = req.user?._id as unknown as string;
+
+      const result = await this.userService.assignCustomerGroup(
+        userId,
+        group,
+      );
+
+      logAdminAction({
+        adminUserId,
+        action: "customer.group_assign",
+        targetType: "Customer",
+        targetId: userId,
+        metadata: { group: result.group },
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
+
+      return res.status(HttpStatus.OK).json({
+        data: result,
+        status: "ok",
+        message: "Customer group updated successfully",
+      } as ApiResponse);
+    },
+  );
+
+  updateCustomerNotes = handleAsyncControl(
+    async (
+      req: Request<{ userId: string }, {}, { adminNotes: string }>,
+      res: Response,
+    ): Promise<Response> => {
+      const { userId } = req.params;
+      const { adminNotes } = req.body;
+      const adminUserId = req.user?._id as unknown as string;
+
+      const result = await this.userService.updateCustomerAdminNotes(
+        userId,
+        adminNotes,
+      );
+
+      logAdminAction({
+        adminUserId,
+        action: "customer.notes_update",
+        targetType: "Customer",
+        targetId: userId,
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
+
+      return res.status(HttpStatus.OK).json({
+        data: result,
+        status: "ok",
+        message: "Customer notes updated successfully",
+      } as ApiResponse);
+    },
+  );
+
+  resetCustomerPassword = handleAsyncControl(
+    async (
+      req: Request<{ userId: string }>,
+      res: Response,
+    ): Promise<Response> => {
+      const { userId } = req.params;
+      const adminUserId = req.user?._id as unknown as string;
+
+      const email = await this.userService.getCustomerForPasswordReset(
+        userId,
+      );
+      await this.authService.forgotPassword(email);
+
+      logAdminAction({
+        adminUserId,
+        action: "customer.reset_password",
+        targetType: "User",
+        targetId: userId,
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
+
+      return res.status(HttpStatus.OK).json({
+        data: null,
+        status: "ok",
+        message: "Password reset email sent to customer",
       } as ApiResponse);
     },
   );

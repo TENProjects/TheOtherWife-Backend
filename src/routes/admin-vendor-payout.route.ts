@@ -14,7 +14,7 @@ import {
  * /api/v1/admin/vendor-payout-requests:
  *   get:
  *     summary: List vendor payout requests (admin)
- *     tags: [Admin Vendor Payout]
+ *     tags: [Admin]
  *     parameters:
  *       - in: query
  *         name: status
@@ -33,7 +33,7 @@ import {
  * /api/v1/admin/vendor-payout-requests/{requestId}:
  *   get:
  *     summary: Get vendor payout request by id (admin)
- *     tags: [Admin Vendor Payout]
+ *     tags: [Admin]
  *     parameters:
  *       - in: path
  *         name: requestId
@@ -47,7 +47,7 @@ import {
  *         description: Not found
  *   patch:
  *     summary: Update vendor payout request status/payment status (admin)
- *     tags: [Admin Vendor Payout]
+ *     tags: [Admin]
  *     parameters:
  *       - in: path
  *         name: requestId
