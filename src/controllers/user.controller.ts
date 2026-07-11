@@ -7,6 +7,7 @@ import { AuthService } from "../services/auth.service.js";
 import { HttpStatus } from "../config/http.config.js";
 import { ApiResponse } from "../util/response.util.js";
 import { nodeEnv } from "../constants/env.js";
+import { logAdminAction } from "../util/audit-log.util.js";
 
 export class UserController {
   userService: UserService;
@@ -100,8 +101,19 @@ export class UserController {
     ): Promise<Response> => {
       const { userId } = req.params;
       const { status } = req.body;
+      const adminUserId = req.user?._id as unknown as string;
 
       const user = await this.userService.updateUserStatus(userId, status);
+
+      logAdminAction({
+        adminUserId,
+        action: "user.status_update",
+        targetType: "User",
+        targetId: userId,
+        metadata: { status },
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
 
       return res.status(HttpStatus.OK).json({
         data: user,
@@ -127,6 +139,7 @@ export class UserController {
       res: Response,
     ): Promise<Response> => {
       const { firstName, lastName, email, password, phoneNumber } = req.body;
+      const creatingAdminId = req.user?._id as unknown as string;
 
       const handleSignup = this.authService.signup(["admin"]);
       const { accessToken, refreshToken, ...userWithoutPassword } =
@@ -138,6 +151,16 @@ export class UserController {
           userType: "admin",
           phoneNumber,
         });
+
+      logAdminAction({
+        adminUserId: creatingAdminId,
+        action: "admin.create",
+        targetType: "User",
+        targetId: (userWithoutPassword as any)?._id?.toString(),
+        metadata: { email },
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
 
       return res.status(HttpStatus.CREATED).json({
         data: { accessToken, refreshToken, userWithoutPassword },

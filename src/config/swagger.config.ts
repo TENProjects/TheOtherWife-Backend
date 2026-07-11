@@ -1047,6 +1047,12 @@ const swaggerDefinition = {
         type: "object",
         properties: {
           status: { $ref: "#/components/schemas/VendorPayoutRequestStatus" },
+          action: {
+            type: "string",
+            enum: ["approve", "reject", "process"],
+            description:
+              "Alias for `status` (approve→approved, reject→rejected, process→processing). Either may be used; `status` takes precedence if both are sent.",
+          },
           paymentStatus: {
             $ref: "#/components/schemas/VendorPayoutRequestPaymentStatus",
           },
@@ -1065,6 +1071,32 @@ const swaggerDefinition = {
               },
             },
           },
+        },
+      },
+      Pagination: {
+        type: "object",
+        properties: {
+          page: { type: "number" },
+          limit: { type: "number" },
+          total: { type: "number" },
+          totalPages: { type: "number" },
+        },
+      },
+      AdminAuditLog: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          adminUserId: {
+            type: "object",
+            description: "Populated with firstName, lastName, email",
+          },
+          action: { type: "string" },
+          targetType: { type: "string" },
+          targetId: { type: "string" },
+          metadata: { type: "object" },
+          ipAddress: { type: "string" },
+          userAgent: { type: "string" },
+          createdAt: { type: "string", format: "date-time" },
         },
       },
       ErrorResponse: {

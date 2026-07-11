@@ -6,6 +6,7 @@ import { VendorService } from "../services/vendor.service.js";
 import type { Request, Response } from "express";
 import { ApiResponse } from "../util/response.util.js";
 import type { VendorOpeningHours } from "../util/vendor-opening-hours.util.js";
+import { logAdminAction } from "../util/audit-log.util.js";
 
 export class VendorController {
   vendorService: VendorService;
@@ -180,6 +181,14 @@ export class VendorController {
           userId,
           userType,
         );
+        logAdminAction({
+          adminUserId: userId,
+          action: "vendor.approve",
+          targetType: "Vendor",
+          targetId: vendorId,
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent"),
+        });
         return res.status(HttpStatus.OK).json({
           status: "ok",
           message: "Vendor approved successfully",
@@ -197,21 +206,35 @@ export class VendorController {
         { id: string },
         {},
         {
-          rejectionReason: string;
+          rejectionReason?: string;
+          reason?: string;
         }
       >,
       res: Response,
     ): Promise<Response> => {
       const vendorId = req.params.id;
       const userId = req?.user?._id as unknown as string;
-      const rejectionReason = req.body.rejectionReason;
+      const userType = req.user?.userType as unknown as string;
+      // Two frontend call sites disagree on the field name (rejectionReason
+      // vs reason) — accept either rather than requiring a frontend change.
+      const rejectionReason = req.body.rejectionReason ?? req.body.reason;
 
       try {
         const vendor = await this.vendorService.rejectVendor(
           vendorId,
           userId,
           rejectionReason,
+          userType,
         );
+        logAdminAction({
+          adminUserId: userId,
+          action: "vendor.reject",
+          targetType: "Vendor",
+          targetId: vendorId,
+          metadata: { rejectionReason },
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent"),
+        });
         return res.status(HttpStatus.OK).json({
           status: "ok",
           message: "Vendor rejected successfully",
@@ -227,9 +250,22 @@ export class VendorController {
     async (req: Request<{ id: string }>, res: Response): Promise<Response> => {
       const vendorId = req.params.id;
       const userId = req?.user?._id as unknown as string;
+      const userType = req.user?.userType as unknown as string;
 
       try {
-        const vendor = await this.vendorService.suspendVendor(vendorId, userId);
+        const vendor = await this.vendorService.suspendVendor(
+          vendorId,
+          userId,
+          userType,
+        );
+        logAdminAction({
+          adminUserId: userId,
+          action: "vendor.suspend",
+          targetType: "Vendor",
+          targetId: vendorId,
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent"),
+        });
         return res.status(HttpStatus.OK).json({
           status: "ok",
           message: "Vendor suspended successfully",
@@ -238,6 +274,31 @@ export class VendorController {
       } catch (error) {
         throw error;
       }
+    },
+  );
+
+  // Admin: list all vendors, optionally filtered by ?status=pending|approved|rejected|suspended
+  getAllVendorsForAdmin = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const status = req.query.status as string | undefined;
+      const vendors = await this.vendorService.getAllVendorsForAdmin(status);
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Vendors fetched successfully",
+        data: { vendors },
+      } as ApiResponse);
+    },
+  );
+
+  // Admin: convenience alias for GET /vendors?status=pending
+  getPendingVendorsForAdmin = handleAsyncControl(
+    async (_req: Request, res: Response): Promise<Response> => {
+      const vendors = await this.vendorService.getAllVendorsForAdmin("pending");
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Pending vendors fetched successfully",
+        data: { vendors },
+      } as ApiResponse);
     },
   );
 

@@ -11,6 +11,7 @@ import { transaction } from "../util/transaction.util.js";
 import Vendor from "../models/vendor.model.js";
 import Customer from "../models/customer.model.js";
 import Order from "../models/order.model.js";
+import Meal from "../models/meal.model.js";
 
 export class UserService {
   getCurrentUser = async (userId: string) => {
@@ -93,30 +94,72 @@ export class UserService {
     });
   };
 
+  // Percentage change between two period counts. Returns 100 when going from
+  // zero to a positive count (can't divide by zero), 0 when both are zero.
+  private percentChange = (current: number, previous: number): number => {
+    if (previous === 0) return current === 0 ? 0 : 100;
+    return Math.round(((current - previous) / previous) * 100);
+  };
+
   getAdminAnalytics = async () => {
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
     const [
       totalCustomers,
+      customersThisMonth,
+      customersLastMonth,
       totalOrders,
+      ordersThisMonth,
+      ordersLastMonth,
+      totalMenus,
       revenueAggregation,
+      revenueThisMonthAgg,
+      revenueLastMonthAgg,
       vendorStatusAggregation,
     ] = await Promise.all([
       User.countDocuments({
         userType: "customer",
         status: { $ne: "deleted" },
       }),
+      User.countDocuments({
+        userType: "customer",
+        status: { $ne: "deleted" },
+        createdAt: { $gte: startOfThisMonth },
+      }),
+      User.countDocuments({
+        userType: "customer",
+        status: { $ne: "deleted" },
+        createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth },
+      }),
       Order.countDocuments(),
+      Order.countDocuments({ createdAt: { $gte: startOfThisMonth } }),
+      Order.countDocuments({
+        createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth },
+      }),
+      Meal.countDocuments({ isDeleted: false }),
+      Order.aggregate<{ _id: null; totalRevenue: number }>([
+        { $match: { paymentStatus: "succeeded" } },
+        { $group: { _id: null, totalRevenue: { $sum: "$totalAmount" } } },
+      ]),
       Order.aggregate<{ _id: null; totalRevenue: number }>([
         {
           $match: {
             paymentStatus: "succeeded",
+            createdAt: { $gte: startOfThisMonth },
           },
         },
+        { $group: { _id: null, totalRevenue: { $sum: "$totalAmount" } } },
+      ]),
+      Order.aggregate<{ _id: null; totalRevenue: number }>([
         {
-          $group: {
-            _id: null,
-            totalRevenue: { $sum: "$totalAmount" },
+          $match: {
+            paymentStatus: "succeeded",
+            createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth },
           },
         },
+        { $group: { _id: null, totalRevenue: { $sum: "$totalAmount" } } },
       ]),
       Vendor.aggregate<{ _id: string; count: number }>([
         {
@@ -144,35 +187,116 @@ export class UserService {
       }
     });
 
+    const totalRevenue = revenueAggregation[0]?.totalRevenue ?? 0;
+    const revenueThisMonth = revenueThisMonthAgg[0]?.totalRevenue ?? 0;
+    const revenueLastMonth = revenueLastMonthAgg[0]?.totalRevenue ?? 0;
+
     return {
       totalCustomers,
+      totalCustomersChange: this.percentChange(
+        customersThisMonth,
+        customersLastMonth,
+      ),
       totalOrders,
-      totalRevenue: revenueAggregation[0]?.totalRevenue ?? 0,
+      totalOrdersChange: this.percentChange(ordersThisMonth, ordersLastMonth),
+      totalRevenue,
+      totalRevenueChange: this.percentChange(
+        revenueThisMonth,
+        revenueLastMonth,
+      ),
+      totalMenus,
+      // Meal documents don't track a creation timestamp, so a period-over-period
+      // change can't be computed from real data — explicitly null rather than a
+      // fabricated number.
+      totalMenusChange: null,
       vendors: vendorBreakdown,
     };
   };
 
   getAdminOrderAnalytics = async () => {
-    const [statusBreakdown, paymentStatusBreakdown] = await Promise.all([
+    const now = new Date();
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    const [
+      statusBreakdown,
+      paymentStatusBreakdown,
+      revenueByMonth,
+      locationAggregation,
+      trendingThisMonth,
+      trendingLastMonth,
+      rejectedOrders,
+      totalOrdersForLocationDist,
+    ] = await Promise.all([
       Order.aggregate<{ _id: string; count: number }>([
-        {
-          $group: {
-            _id: "$status",
-            count: { $sum: 1 },
-          },
-        },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
       Order.aggregate<{ _id: string; count: number }>([
-        {
-          $group: {
-            _id: "$paymentStatus",
-            count: { $sum: 1 },
-          },
-        },
+        { $group: { _id: "$paymentStatus", count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
+      Order.aggregate<{ _id: { year: number; month: number }; revenue: number }>([
+        {
+          $match: {
+            paymentStatus: "succeeded",
+            createdAt: { $gte: sixMonthsAgo },
+          },
+        },
+        {
+          $group: {
+            _id: { year: { $year: "$createdAt" }, month: { $month: "$createdAt" } },
+            revenue: { $sum: "$totalAmount" },
+          },
+        },
+        { $sort: { "_id.year": 1, "_id.month": 1 } },
+      ]),
+      Order.aggregate<{ _id: string; count: number }>([
+        { $match: { "addressSnapshot.city": { $exists: true, $ne: "" } } },
+        { $group: { _id: "$addressSnapshot.city", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 },
+      ]),
+      Order.aggregate<{ _id: string; orders: number; price: number }>([
+        { $match: { createdAt: { $gte: startOfThisMonth } } },
+        { $unwind: "$items" },
+        {
+          $group: {
+            _id: "$items.mealName",
+            orders: { $sum: "$items.quantity" },
+            price: { $avg: "$items.unitPrice" },
+          },
+        },
+        { $sort: { orders: -1 } },
+        { $limit: 10 },
+      ]),
+      Order.aggregate<{ _id: string; orders: number }>([
+        {
+          $match: {
+            createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth },
+          },
+        },
+        { $unwind: "$items" },
+        {
+          $group: {
+            _id: "$items.mealName",
+            orders: { $sum: "$items.quantity" },
+          },
+        },
+      ]),
+      Order.find({ status: "vendor_rejected" })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .select("_id createdAt"),
+      Order.countDocuments({
+        "addressSnapshot.city": { $exists: true, $ne: "" },
+      }),
     ]);
+
+    const lastMonthByMeal = new Map(
+      trendingLastMonth.map((entry) => [entry._id, entry.orders]),
+    );
 
     return {
       orderCategories: statusBreakdown.map((entry) => ({
@@ -183,7 +307,62 @@ export class UserService {
         status: entry._id,
         count: entry.count,
       })),
+      orderSummary: this.buildOrderSummary(statusBreakdown),
+      revenueTrend: revenueByMonth.map((entry) => ({
+        month: `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`,
+        revenue: entry.revenue,
+      })),
+      trendingMenus: trendingThisMonth.map((entry) => ({
+        name: entry._id,
+        orders: entry.orders,
+        price: Math.round(entry.price),
+        change: this.percentChange(
+          entry.orders,
+          lastMonthByMeal.get(entry._id) ?? 0,
+        ),
+      })),
+      locationDist: locationAggregation.map((entry) => ({
+        city: entry._id,
+        value: entry.count,
+        percent:
+          totalOrdersForLocationDist > 0
+            ? Math.round((entry.count / totalOrdersForLocationDist) * 100)
+            : 0,
+      })),
+      // Gender is not currently captured anywhere in the user/customer schema —
+      // returning an empty array rather than fabricating a breakdown.
+      genderDist: [] as { gender: string; value: number; percent: number }[],
+      rejectedOrders: rejectedOrders.map((order) => ({
+        id: order._id.toString(),
+        date: (order as any).createdAt,
+        // Vendor rejection doesn't currently capture a reason (rejectVendorOrder
+        // only sets status) — null rather than a fabricated explanation.
+        reason: null as string | null,
+      })),
     };
+  };
+
+  // Buckets the raw order status enum into the three coarse categories the
+  // admin dashboard displays. The order schema has no distinct "delivered"
+  // terminal state beyond "confirmed", so that's treated as the completed bucket.
+  private buildOrderSummary = (
+    statusBreakdown: { _id: string; count: number }[],
+  ) => {
+    const summary = { completed: 0, inProgress: 0, cancelled: 0 };
+    const cancelledStatuses = new Set([
+      "customer_cancelled",
+      "vendor_rejected",
+      "expired",
+      "payment_failed",
+    ]);
+
+    statusBreakdown.forEach(({ _id: status, count }) => {
+      if (status === "confirmed") summary.completed += count;
+      else if (cancelledStatuses.has(status)) summary.cancelled += count;
+      else summary.inProgress += count; // pending_payment, paid
+    });
+
+    return summary;
   };
 
   closeCurrentUserAccount = transaction.use(

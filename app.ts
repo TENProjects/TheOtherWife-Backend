@@ -31,6 +31,7 @@ import { walletRouter } from "./src/routes/wallet.route.js";
 import { analyticsRouter } from "./src/routes/analytics.route.js";
 import { vendorWalletRouter } from "./src/routes/vendor-wallet.route.js";
 import { adminVendorPayoutRouter } from "./src/routes/admin-vendor-payout.route.js";
+import { adminAuditLogRouter } from "./src/routes/admin-audit-log.route.js";
 import { favouriteRouter } from "./src/routes/favourite.route.js";
 import { mealPlanRouter } from "./src/routes/meal-plan.route.js";
 import "./src/signals/push-notification.signal.js";
@@ -122,6 +123,7 @@ export class App {
     this.app.use("/api/v1/wallet", walletRouter);
     this.app.use("/api/v1/vendor-wallet", vendorWalletRouter);
     this.app.use("/api/v1/admin/vendor-payout-requests", adminVendorPayoutRouter);
+    this.app.use("/api/v1/admin/audit-logs", adminAuditLogRouter);
     this.app.use("/api/v1/analytics", analyticsRouter);
     this.app.use("/api/v1/favourites", favouriteRouter);
     this.app.use("/api/v1/meal-plans", mealPlanRouter);

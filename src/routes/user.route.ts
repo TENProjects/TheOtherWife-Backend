@@ -11,6 +11,10 @@ import {
   createAdminUserSchema,
   updateUserStatusSchema,
 } from "../zod-schema/user.schema.js";
+import {
+  adminRateLimitMiddleware,
+  adminSensitiveActionRateLimitMiddleware,
+} from "../middlewares/admin-rate-limit.middleware.js";
 
 /**
  * @swagger
@@ -280,21 +284,25 @@ class UserRouter {
     this.router.get(
       "/",
       roleGuardMiddleware(["admin"]),
+      adminRateLimitMiddleware,
       this.userController.getAllUsers,
     );
     this.router.get(
       "/customers",
       roleGuardMiddleware(["admin"]),
+      adminRateLimitMiddleware,
       this.userController.getAllCustomers,
     );
     this.router.get(
       "/vendors",
       roleGuardMiddleware(["admin"]),
+      adminRateLimitMiddleware,
       this.userController.getAllVendors,
     );
     this.router.patch(
       "/:userId/status",
       roleGuardMiddleware(["admin"]),
+      adminSensitiveActionRateLimitMiddleware,
       zodValidation(updateUserStatusSchema),
       this.userController.updateUserStatus,
     );
@@ -302,6 +310,7 @@ class UserRouter {
     this.router.post(
       "/admins",
       roleGuardMiddleware(["admin"]),
+      adminSensitiveActionRateLimitMiddleware,
       zodValidation(createAdminUserSchema),
       this.userController.createAdminUser,
     );

@@ -292,6 +292,10 @@ export class VendorWalletService {
     requestId: string,
     payload: {
       status?: AdminPayoutStatus;
+      // Alias accepted alongside `status` for the admin dashboard's
+      // financialSlice.ts contract, which uses `action` instead — mapped to
+      // `status` below without altering any of the transition/validation logic.
+      action?: "approve" | "reject" | "process";
       paymentStatus?: "paid" | "unpaid";
       approvedAmount?: number;
       payoutReference?: string;
@@ -300,6 +304,15 @@ export class VendorWalletService {
       allocations?: MarkPaidAllocationInput[];
     },
   ) => {
+    if (!payload.status && payload.action) {
+      const actionToStatus: Record<string, AdminPayoutStatus> = {
+        approve: "approved",
+        reject: "rejected",
+        process: "processing",
+      };
+      payload = { ...payload, status: actionToStatus[payload.action] };
+    }
+
     const result = await transaction.use(
       async (session: ClientSession, currentAdminUserId: string, currentRequestId: string) => {
         const payoutRequest = await VendorPayoutRequest.findById(currentRequestId).session(

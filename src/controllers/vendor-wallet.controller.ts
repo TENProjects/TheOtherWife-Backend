@@ -4,6 +4,7 @@ import type { Request, Response } from "express";
 import { HttpStatus } from "../config/http.config.js";
 import { handleAsyncControl } from "../middlewares/handle-async-control.middleware.js";
 import { VendorWalletService } from "../services/vendor-wallet.service.js";
+import { logAdminAction } from "../util/audit-log.util.js";
 
 export class VendorWalletController {
   private vendorWalletService: VendorWalletService;
@@ -111,6 +112,7 @@ export class VendorWalletController {
         {},
         {
           status?: "requested" | "processing" | "approved" | "rejected";
+          action?: "approve" | "reject" | "process";
           paymentStatus?: "unpaid" | "paid";
           approvedAmount?: number;
           payoutReference?: string;
@@ -127,6 +129,16 @@ export class VendorWalletController {
         req.params.requestId,
         req.body,
       );
+
+      logAdminAction({
+        adminUserId,
+        action: "payout.update",
+        targetType: "VendorPayoutRequest",
+        targetId: req.params.requestId,
+        metadata: { ...req.body, allocations: undefined },
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
 
       return res.status(HttpStatus.OK).json({
         status: "ok",

@@ -12,6 +12,7 @@ import {
 } from "../zod-schema/vendor.schema.js";
 import { uploadBusinessLogo } from "../middlewares/file-upload.middleware.js";
 import { uploadBusinessLogoToCloudinary } from "../middlewares/cloudinary-upload.middleware.js";
+import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middleware.js";
 
 /**
  * @swagger
@@ -58,6 +59,99 @@ import { uploadBusinessLogoToCloudinary } from "../middlewares/cloudinary-upload
  *                             limit: { type: number }
  *                             searchRadius:
  *                               $ref: "#/components/schemas/SearchRadius"
+ */
+
+/**
+ * @swagger
+ * /api/v1/vendors:
+ *   get:
+ *     summary: List all vendors (admin)
+ *     tags: [Vendor]
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           $ref: "#/components/schemas/VendorApprovalStatus"
+ *         description: Filter by approval status
+ *     responses:
+ *       "200":
+ *         description: Vendors fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: "#/components/schemas/ApiResponse"
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         vendors:
+ *                           type: array
+ *                           items:
+ *                             $ref: "#/components/schemas/Vendor"
+ *       "401":
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/responses/401"
+ *       "403":
+ *         description: Forbidden
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/responses/403"
+ *       "500":
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/responses/500"
+ */
+
+/**
+ * @swagger
+ * /api/v1/vendors/pending:
+ *   get:
+ *     summary: List vendors pending approval (admin)
+ *     tags: [Vendor]
+ *     responses:
+ *       "200":
+ *         description: Pending vendors fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: "#/components/schemas/ApiResponse"
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         vendors:
+ *                           type: array
+ *                           items:
+ *                             $ref: "#/components/schemas/Vendor"
+ *       "401":
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/responses/401"
+ *       "403":
+ *         description: Forbidden
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/responses/403"
+ *       "500":
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/responses/500"
  */
 
 /**
@@ -308,13 +402,18 @@ import { uploadBusinessLogoToCloudinary } from "../middlewares/cloudinary-upload
  *           required: true
  *           description: The vendor ID
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:
  *             type: object
  *             properties:
- *               rejectionReason: { type: string }
+ *               rejectionReason:
+ *                 type: string
+ *                 description: Either this or `reason` may be used.
+ *               reason:
+ *                 type: string
+ *                 description: Alias for rejectionReason.
  *     responses:
  *       "200":
  *         description: Vendor rejected successfully
@@ -484,23 +583,41 @@ class VendorRouter {
       zodValidation(updateVendorAvailabilitySchema),
       this.vendorController.updateVendorAvailability,
     );
+    // Must be registered before "/:id" or Express would match "pending" as an id.
+    this.router.get(
+      "/pending",
+      authMiddleware,
+      roleGuardMiddleware(["admin"]),
+      adminRateLimitMiddleware,
+      this.vendorController.getPendingVendorsForAdmin,
+    );
+    this.router.get(
+      "/",
+      authMiddleware,
+      roleGuardMiddleware(["admin"]),
+      adminRateLimitMiddleware,
+      this.vendorController.getAllVendorsForAdmin,
+    );
     this.router.get("/:id", this.vendorController.getPublicVendorDetails);
     this.router.put(
       "/approve/:id",
       authMiddleware,
       roleGuardMiddleware(["admin"]),
+      adminRateLimitMiddleware,
       this.vendorController.approveVendor,
     );
     this.router.put(
       "/reject/:id",
       authMiddleware,
       roleGuardMiddleware(["admin"]),
+      adminRateLimitMiddleware,
       this.vendorController.rejectVendor,
     );
     this.router.put(
       "/suspend/:id",
       authMiddleware,
       roleGuardMiddleware(["admin"]),
+      adminRateLimitMiddleware,
       this.vendorController.suspendVendor,
     );
     this.router.delete(

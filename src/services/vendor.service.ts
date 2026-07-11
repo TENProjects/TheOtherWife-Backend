@@ -478,12 +478,24 @@ export class VendorService {
     vendorId: string,
     userId: string,
     reason: string | undefined,
+    userType?: string,
   ) => {
     if (!vendorId && !userId) {
       throw new BadRequestException(
         "Vendor ID and User ID are required",
         HttpStatus.BAD_REQUEST,
         ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    // Route-level roleGuardMiddleware(["admin"]) already enforces this — this
+    // is defense-in-depth matching approveVendor's existing re-check, in case
+    // this service method is ever called from a different, unguarded context.
+    if (userType !== undefined && userType !== "admin") {
+      throw new UnauthorizedExceptionError(
+        "User is not an admin",
+        HttpStatus.FORBIDDEN,
+        ErrorCode.ACCESS_UNAUTHORIZED,
       );
     }
 
@@ -507,12 +519,21 @@ export class VendorService {
     return { vendor };
   };
 
-  suspendVendor = async (vendorId: string, userId: string) => {
+  suspendVendor = async (vendorId: string, userId: string, userType?: string) => {
     if (!vendorId && !userId) {
       throw new BadRequestException(
         "Vendor ID and User ID are required",
         HttpStatus.BAD_REQUEST,
         ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    // Defense-in-depth, matching approveVendor's existing re-check.
+    if (userType !== undefined && userType !== "admin") {
+      throw new UnauthorizedExceptionError(
+        "User is not an admin",
+        HttpStatus.FORBIDDEN,
+        ErrorCode.ACCESS_UNAUTHORIZED,
       );
     }
 
@@ -533,6 +554,35 @@ export class VendorService {
     }
 
     return { vendor };
+  };
+
+  // Admin-facing vendor list, optionally filtered by approvalStatus (e.g. "pending").
+  // Mirrors UserService.getAllVendors' shape (populated userId/addressId +
+  // synthesized ratingSummary) so both admin list endpoints stay consistent.
+  getAllVendorsForAdmin = async (status?: string) => {
+    const query: Record<string, any> = {};
+    if (status) {
+      query.approvalStatus = status;
+    }
+
+    const vendors = await Vendor.find(query)
+      .populate("userId", "-passwordHash")
+      .populate("addressId")
+      .sort({ createdAt: -1 })
+      .limit(100);
+
+    return vendors.map((vendor) => {
+      const vendorObject = vendor.toObject();
+      return {
+        ...vendorObject,
+        rating: vendorObject.ratingAverage ?? 0,
+        ratingSummary: {
+          ratingAverage: vendorObject.ratingAverage ?? 0,
+          ratingCount: vendorObject.ratingCount ?? 0,
+          ratingScore: vendorObject.ratingScore ?? 0,
+        },
+      };
+    });
   };
 
   deleteVendorProfile = async (userId: string) => {

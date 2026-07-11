@@ -4,6 +4,10 @@ import { Router } from "express";
 import { VendorWalletController } from "../controllers/vendor-wallet.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
+import {
+  adminRateLimitMiddleware,
+  adminSensitiveActionRateLimitMiddleware,
+} from "../middlewares/admin-rate-limit.middleware.js";
 
 /**
  * @swagger
@@ -71,14 +75,22 @@ class AdminVendorPayoutRouter {
   constructor() {
     this.vendorWalletController = new VendorWalletController();
     this.router = Router();
-    this.router.use(authMiddleware, roleGuardMiddleware(["admin"]));
+    this.router.use(
+      authMiddleware,
+      roleGuardMiddleware(["admin"]),
+      adminRateLimitMiddleware,
+    );
     this.initializeRoutes();
   }
 
   initializeRoutes() {
     this.router.get("/", this.vendorWalletController.getAdminPayoutRequests);
     this.router.get("/:requestId", this.vendorWalletController.getAdminPayoutRequestById);
-    this.router.patch("/:requestId", this.vendorWalletController.updateAdminPayoutRequest);
+    this.router.patch(
+      "/:requestId",
+      adminSensitiveActionRateLimitMiddleware,
+      this.vendorWalletController.updateAdminPayoutRequest,
+    );
   }
 }
 
