@@ -10,6 +10,7 @@ import Payment from "../models/payment.model.js";
 import Vendor from "../models/vendor.model.js";
 import VendorPayoutAllocation from "../models/vendorPayoutAllocation.model.js";
 import VendorPayoutRequest from "../models/vendorPayoutRequest.model.js";
+import FinancialSettings from "../models/financialSettings.model.js";
 import { transaction } from "../util/transaction.util.js";
 
 type MarkPaidAllocationInput = {
@@ -195,6 +196,19 @@ export class VendorWalletService {
     },
   ) => {
     this.assertPositiveAmount(input.amount, "Amount");
+
+    const settings = await FinancialSettings.findOne().select(
+      "minimumWithdrawalAmount",
+    );
+    const minimumWithdrawalAmount = settings?.minimumWithdrawalAmount ?? 0;
+
+    if (input.amount < minimumWithdrawalAmount) {
+      throw new BadRequestException(
+        `Requested amount is below the minimum withdrawal amount of ${minimumWithdrawalAmount}`,
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
 
     const vendor = await this.getVendorByUserId(vendorUserId);
     const summary = await this.getVendorWalletSummary(vendorUserId);

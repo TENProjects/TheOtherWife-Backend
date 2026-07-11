@@ -37,3 +37,17 @@ export const updateTaxSettingsSchema = z.object({
     )
     .optional(),
 });
+
+export const updateSystemSettingsSchema = z
+  .object({
+    refundAutoApprovalThreshold: z.number().min(0).optional(),
+    orderDelayThresholdMinutes: z.number().min(1).optional(),
+    minimumWithdrawalAmount: z.number().min(0).optional(),
+  })
+  .refine(
+    (value) =>
+      value.refundAutoApprovalThreshold !== undefined ||
+      value.orderDelayThresholdMinutes !== undefined ||
+      value.minimumWithdrawalAmount !== undefined,
+    { message: "At least one field is required" },
+  );

@@ -364,6 +364,12 @@ import {
  *               status:
  *                 type: string
  *                 enum: [active, suspended, deleted]
+ *               reason:
+ *                 type: string
+ *                 maxLength: 500
+ *                 description: >-
+ *                   Stored on the user as statusReason; cleared automatically
+ *                   when status is set back to active.
  *     responses:
  *       "200":
  *         description: User status updated successfully

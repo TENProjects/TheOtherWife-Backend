@@ -317,4 +317,43 @@ export class FinancialsService {
       categories: settings.taxCategories,
     };
   };
+
+  getSystemSettings = async () => {
+    const settings = await this.getOrCreateSettings();
+    return {
+      refundAutoApprovalThreshold: settings.refundAutoApprovalThreshold,
+      orderDelayThresholdMinutes: settings.orderDelayThresholdMinutes,
+      minimumWithdrawalAmount: settings.minimumWithdrawalAmount,
+    };
+  };
+
+  updateSystemSettings = async (
+    payload: {
+      refundAutoApprovalThreshold?: number;
+      orderDelayThresholdMinutes?: number;
+      minimumWithdrawalAmount?: number;
+    },
+    adminUserId: string,
+  ) => {
+    const settings = await this.getOrCreateSettings();
+
+    if (payload.refundAutoApprovalThreshold !== undefined) {
+      settings.refundAutoApprovalThreshold = payload.refundAutoApprovalThreshold;
+    }
+    if (payload.orderDelayThresholdMinutes !== undefined) {
+      settings.orderDelayThresholdMinutes = payload.orderDelayThresholdMinutes;
+    }
+    if (payload.minimumWithdrawalAmount !== undefined) {
+      settings.minimumWithdrawalAmount = payload.minimumWithdrawalAmount;
+    }
+
+    settings.updatedBy = new mongoose.Types.ObjectId(adminUserId);
+    await settings.save();
+
+    return {
+      refundAutoApprovalThreshold: settings.refundAutoApprovalThreshold,
+      orderDelayThresholdMinutes: settings.orderDelayThresholdMinutes,
+      minimumWithdrawalAmount: settings.minimumWithdrawalAmount,
+    };
+  };
 }

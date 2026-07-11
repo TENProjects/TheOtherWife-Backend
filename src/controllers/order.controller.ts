@@ -102,4 +102,47 @@ export class OrderController {
       } as ApiResponse);
     },
   );
+
+  getAllOrdersForAdmin = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const { status, page, limit } = req.query;
+      const result = await this.orderService.getAllOrdersForAdmin({
+        status: status as string | undefined,
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      });
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Orders fetched successfully",
+        data: result,
+      } as ApiResponse);
+    },
+  );
+
+  getOrderDetailsForAdmin = handleAsyncControl(
+    async (req: Request<{ id: string }>, res: Response): Promise<Response> => {
+      const result = await this.orderService.getOrderDetailsForAdmin(
+        req.params.id,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Order details fetched successfully",
+        data: result,
+      } as ApiResponse);
+    },
+  );
+
+  getPlatformPerformanceMetrics = handleAsyncControl(
+    async (_req: Request, res: Response): Promise<Response> => {
+      const result = await this.orderService.getPlatformPerformanceMetrics();
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Platform performance metrics fetched successfully",
+        data: result,
+      } as ApiResponse);
+    },
+  );
 }

@@ -8,6 +8,7 @@ import { zodValidation } from "../middlewares/validation.js";
 import {
   updateCommissionConfigSchema,
   updatePaymentGatewaySchema,
+  updateSystemSettingsSchema,
   updateTaxSettingsSchema,
 } from "../zod-schema/financials.schema.js";
 import {
@@ -255,6 +256,65 @@ import {
  *         description: Forbidden
  */
 
+/**
+ * @swagger
+ * /api/v1/admin/financials/system-settings:
+ *   get:
+ *     summary: Get Super Admin System Control settings (admin)
+ *     tags: [Admin]
+ *     responses:
+ *       "200":
+ *         description: System settings fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: "#/components/schemas/ApiResponse"
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         refundAutoApprovalThreshold:
+ *                           type: number
+ *                           description: >-
+ *                             Displayed as guidance on the refund decision
+ *                             screen — does not automatically approve refund
+ *                             requests.
+ *                         orderDelayThresholdMinutes:
+ *                           type: number
+ *                           description: Used to compute the "Delays" performance metric
+ *                         minimumWithdrawalAmount:
+ *                           type: number
+ *                           description: Enforced by POST /vendor-wallet/payout-requests
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *   patch:
+ *     summary: Update Super Admin System Control settings (admin)
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               refundAutoApprovalThreshold: { type: number, minimum: 0 }
+ *               orderDelayThresholdMinutes: { type: number, minimum: 1 }
+ *               minimumWithdrawalAmount: { type: number, minimum: 0 }
+ *     responses:
+ *       "200":
+ *         description: System settings updated successfully
+ *       "400":
+ *         description: Bad request
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+
 class AdminFinancialsRouter {
   private financialsController: FinancialsController;
   router: Router;
@@ -305,6 +365,17 @@ class AdminFinancialsRouter {
       adminSensitiveActionRateLimitMiddleware,
       zodValidation(updateTaxSettingsSchema),
       this.financialsController.updateTaxSettings,
+    );
+
+    this.router.get(
+      "/system-settings",
+      this.financialsController.getSystemSettings,
+    );
+    this.router.patch(
+      "/system-settings",
+      adminSensitiveActionRateLimitMiddleware,
+      zodValidation(updateSystemSettingsSchema),
+      this.financialsController.updateSystemSettings,
     );
   }
 }

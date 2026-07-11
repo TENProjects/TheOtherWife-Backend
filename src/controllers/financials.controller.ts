@@ -170,4 +170,52 @@ export class FinancialsController {
       } as ApiResponse);
     },
   );
+
+  getSystemSettings = handleAsyncControl(
+    async (_req: Request, res: Response): Promise<Response> => {
+      const settings = await this.financialsService.getSystemSettings();
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "System settings fetched successfully",
+        data: settings,
+      } as ApiResponse);
+    },
+  );
+
+  updateSystemSettings = handleAsyncControl(
+    async (
+      req: Request<
+        {},
+        {},
+        {
+          refundAutoApprovalThreshold?: number;
+          orderDelayThresholdMinutes?: number;
+          minimumWithdrawalAmount?: number;
+        }
+      >,
+      res: Response,
+    ): Promise<Response> => {
+      const adminUserId = req.user?._id as unknown as string;
+
+      const settings = await this.financialsService.updateSystemSettings(
+        req.body,
+        adminUserId,
+      );
+
+      logAdminAction({
+        adminUserId,
+        action: "financials.system_settings_update",
+        targetType: "FinancialSettings",
+        metadata: req.body,
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "System settings updated successfully",
+        data: settings,
+      } as ApiResponse);
+    },
+  );
 }

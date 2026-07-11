@@ -20,7 +20,12 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  *           type: string
  *         description: >-
  *           Filter by action, e.g. "vendor.approve", "vendor.reject",
- *           "vendor.suspend", "user.status_update", "admin.create", "payout.update"
+ *           "vendor.suspend", "vendor.inspection_status_update",
+ *           "user.status_update", "admin.create", "payout.update",
+ *           "customer.group_assign", "customer.notes_update",
+ *           "customer.reset_password", "financials.gateway_update",
+ *           "financials.commission_update", "financials.tax_update",
+ *           "financials.system_settings_update", "refund.approve", "refund.reject"
  *       - in: query
  *         name: targetType
  *         required: false

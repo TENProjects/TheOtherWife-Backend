@@ -316,6 +316,141 @@ export class UserService {
     return user.email;
   };
 
+  // Admin: unified customer + vendor directory for the Super Admin "User &
+  // Vendor Management" table — merges two collections into one searchable,
+  // filterable, paginated list.
+  getUserDirectoryForAdmin = async (
+    filters: {
+      search?: string;
+      type?: "customer" | "vendor";
+      status?: string;
+      page?: number;
+      limit?: number;
+    } = {},
+  ) => {
+    const { search, type, status, page = 1, limit = 50 } = filters;
+    const safeLimit = Math.min(Math.max(limit, 1), 200);
+    const safePage = Math.max(page, 1);
+
+    const userMatch: Record<string, any> = {
+      userType: type ?? { $in: ["customer", "vendor"] },
+      status: { $ne: "deleted" },
+    };
+
+    if (status) {
+      const normalizedStatus = status.trim().toLowerCase();
+      if (!["active", "suspended"].includes(normalizedStatus)) {
+        throw new BadRequestException(
+          "Invalid status filter",
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
+      userMatch.status = normalizedStatus;
+    }
+
+    if (search && search.trim()) {
+      const regex = new RegExp(this.escapeRegex(search.trim()), "i");
+      userMatch.$or = [
+        { firstName: regex },
+        { lastName: regex },
+        { email: regex },
+        { phoneNumber: regex },
+      ];
+    }
+
+    const users = await User.find(userMatch).select("-passwordHash");
+    const userIds = users.map((user) => user._id);
+
+    const vendors = await Vendor.find({ userId: { $in: userIds } }).select(
+      "userId businessName approvalStatus",
+    );
+    const vendorByUserId = new Map(
+      vendors.map((vendor) => [vendor.userId.toString(), vendor]),
+    );
+
+    const directory = users.map((user) => {
+      const vendor = vendorByUserId.get(user._id.toString());
+      return {
+        _id: user._id.toString(),
+        name: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim(),
+        email: user.email,
+        type: user.userType === "vendor" ? "Vendor" : "Customer",
+        status:
+          user.status.charAt(0).toUpperCase() + user.status.slice(1),
+        verified:
+          user.userType === "vendor"
+            ? vendor?.approvalStatus === "approved"
+            : user.isEmailVerified,
+        vendorBusinessName: vendor?.businessName ?? null,
+        joinDate: user.createdAt,
+      };
+    });
+
+    const total = directory.length;
+    const totalPages = Math.max(Math.ceil(total / safeLimit), 1);
+    const start = (safePage - 1) * safeLimit;
+    const paginated = directory.slice(start, start + safeLimit);
+
+    return {
+      users: paginated,
+      pagination: { page: safePage, limit: safeLimit, total, totalPages },
+    };
+  };
+
+  // Admin: unified detail for the "User Details" modal — handles both
+  // customer and vendor user types generically.
+  getUserDetailsForAdmin = async (userId: string) => {
+    const user = await User.findById(userId).select("-passwordHash");
+
+    if (!user) {
+      throw new NotFoundException(
+        "User not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.AUTH_USER_NOT_FOUND,
+      );
+    }
+
+    let location: string | null = null;
+    let verified = false;
+    let vendorBusinessName: string | null = null;
+    let totalOrders = 0;
+
+    if (user.userType === "customer") {
+      const customer = await Customer.findOne({ userId: user._id }).populate(
+        "addressId",
+      );
+      location = (customer?.addressId as any)?.city ?? null;
+      verified = user.isEmailVerified;
+      totalOrders = await Order.countDocuments({ customerId: user._id });
+    } else if (user.userType === "vendor") {
+      const vendor = await Vendor.findOne({ userId: user._id }).populate(
+        "addressId",
+      );
+      location = (vendor?.addressId as any)?.city ?? null;
+      verified = vendor?.approvalStatus === "approved";
+      vendorBusinessName = vendor?.businessName ?? null;
+      totalOrders = vendor
+        ? await Order.countDocuments({ vendorId: vendor._id })
+        : 0;
+    }
+
+    return {
+      _id: user._id.toString(),
+      name: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim(),
+      userType: user.userType,
+      status: user.status.charAt(0).toUpperCase() + user.status.slice(1),
+      statusReason: user.statusReason ?? null,
+      verified,
+      joinDate: user.createdAt,
+      email: user.email,
+      phone: user.phoneNumber ?? null,
+      location,
+      vendorBusinessName,
+      totalOrders,
+    };
+  };
+
   getAllVendors = async () => {
     const vendors = await Vendor.find()
       .populate("userId", "-passwordHash")
@@ -747,6 +882,7 @@ export class UserService {
       session: ClientSession,
       targetUserId: string,
       status: "active" | "suspended" | "deleted",
+      reason?: string,
     ) => {
       if (!targetUserId) {
         throw new BadRequestException(
@@ -767,6 +903,8 @@ export class UserService {
       }
 
       user.status = status;
+      // Cleared on reactivation, set (or left blank) on suspend/delete.
+      user.statusReason = status === "active" ? "" : (reason ?? "");
 
       if (status !== "active") {
         user.refreshToken = "";

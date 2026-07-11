@@ -171,6 +171,37 @@ export class UserController {
     },
   );
 
+  getUserDirectoryForAdmin = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const { search, type, status, page, limit } = req.query;
+      const result = await this.userService.getUserDirectoryForAdmin({
+        search: search as string | undefined,
+        type: type as "customer" | "vendor" | undefined,
+        status: status as string | undefined,
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      });
+      return res.status(HttpStatus.OK).json({
+        data: result,
+        status: "ok",
+        message: "User directory fetched successfully",
+      } as ApiResponse);
+    },
+  );
+
+  getUserDetailsForAdmin = handleAsyncControl(
+    async (req: Request<{ id: string }>, res: Response): Promise<Response> => {
+      const result = await this.userService.getUserDetailsForAdmin(
+        req.params.id,
+      );
+      return res.status(HttpStatus.OK).json({
+        data: result,
+        status: "ok",
+        message: "User details fetched successfully",
+      } as ApiResponse);
+    },
+  );
+
   closeCurrentUserAccount = handleAsyncControl(
     async (
       req: Request<{}, {}, { password: string }>,
@@ -196,21 +227,29 @@ export class UserController {
 
   updateUserStatus = handleAsyncControl(
     async (
-      req: Request<{ userId: string }, {}, { status: "active" | "suspended" | "deleted" }>,
+      req: Request<
+        { userId: string },
+        {},
+        { status: "active" | "suspended" | "deleted"; reason?: string }
+      >,
       res: Response,
     ): Promise<Response> => {
       const { userId } = req.params;
-      const { status } = req.body;
+      const { status, reason } = req.body;
       const adminUserId = req.user?._id as unknown as string;
 
-      const user = await this.userService.updateUserStatus(userId, status);
+      const user = await this.userService.updateUserStatus(
+        userId,
+        status,
+        reason,
+      );
 
       logAdminAction({
         adminUserId,
         action: "user.status_update",
         targetType: "User",
         targetId: userId,
-        metadata: { status },
+        metadata: { status, reason },
         ipAddress: req.ip,
         userAgent: req.get("user-agent"),
       });

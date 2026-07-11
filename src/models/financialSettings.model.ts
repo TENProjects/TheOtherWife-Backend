@@ -20,6 +20,11 @@ export interface FinancialSettingsDocument extends Document {
   paymentGateways: PaymentGatewayConfig[];
   taxDefaultRate: number;
   taxCategories: TaxCategoryConfig[];
+  // System Control (Super Admin) settings — grouped here since this is
+  // already the app's one settings singleton, rather than a second one.
+  refundAutoApprovalThreshold: number;
+  orderDelayThresholdMinutes: number;
+  minimumWithdrawalAmount: number;
   updatedBy?: mongoose.Types.ObjectId;
 }
 
@@ -77,6 +82,30 @@ const FinancialSettingsSchema = new Schema(
         { name: "Food & Beverages", rate: 7.5 },
         { name: "Delivery Fee", rate: 7.5 },
       ],
+    },
+    // Displayed as guidance on the refund decision screen — does not
+    // automatically approve refund requests, since no request-creation flow
+    // in this codebase is wired to check it yet.
+    refundAutoApprovalThreshold: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 5000,
+    },
+    // Used by OrderService.getPlatformPerformanceMetrics to derive the
+    // "Delays" count.
+    orderDelayThresholdMinutes: {
+      type: Number,
+      required: true,
+      min: 1,
+      default: 60,
+    },
+    // Enforced in VendorWalletService.requestVendorPayout.
+    minimumWithdrawalAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 10000,
     },
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,

@@ -19,6 +19,9 @@ export interface UserDocument extends Document {
   refreshToken: string;
   refreshTokenExpiry: Date;
   status: string;
+  // Admin-provided reason for the current status, captured on suspend/delete.
+  // Cleared when the account is reactivated.
+  statusReason?: string;
   userType: string;
   authType: string;
   isEmailVerified: boolean;
@@ -91,6 +94,10 @@ const UserSchema = new Schema(
       type: String,
       enum: ["active", "suspended", "deleted"],
       default: "active",
+    },
+    statusReason: {
+      type: String,
+      required: false,
     },
     userType: {
       type: String,

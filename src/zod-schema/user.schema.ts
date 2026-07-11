@@ -9,6 +9,7 @@ export const closeCurrentUserAccountSchema = z.object({
 
 export const updateUserStatusSchema = z.object({
   status: z.enum(["active", "suspended", "deleted"]),
+  reason: z.string().trim().max(500).optional(),
 });
 
 export const createAdminUserSchema = z
