@@ -282,8 +282,14 @@ export class UserController {
   );
 
   getAdminOrderAnalytics = handleAsyncControl(
-    async (_req: Request, res: Response): Promise<Response> => {
-      const analytics = await this.userService.getAdminOrderAnalytics();
+    async (req: Request, res: Response): Promise<Response> => {
+      const period = req.query.period as
+        | "today"
+        | "week"
+        | "month"
+        | "all"
+        | undefined;
+      const analytics = await this.userService.getAdminOrderAnalytics(period);
       return res.status(HttpStatus.OK).json({
         data: analytics,
         status: "ok",

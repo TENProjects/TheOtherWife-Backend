@@ -11,6 +11,10 @@ export interface VendorDocument extends Document {
   businessDescription: string;
   businessLogoUrl: string;
   approvalStatus: string;
+  // Admin-tracked manual verification/inspection progress, separate from
+  // approvalStatus — tracks whether an admin has reviewed the vendor's
+  // submitted documents/business, independent of the approve/reject decision.
+  inspectionStatus: "not_started" | "in_progress" | "completed";
   isAvailable: boolean;
   openingHours: VendorOpeningHours;
   approvedBy: mongoose.Types.ObjectId;
@@ -89,6 +93,11 @@ const VendorSchema = new Schema({
     type: String,
     enum: ["pending", "approved", "suspended", "rejected"],
     default: "pending",
+  },
+  inspectionStatus: {
+    type: String,
+    enum: ["not_started", "in_progress", "completed"],
+    default: "not_started",
   },
   isAvailable: {
     type: Boolean,

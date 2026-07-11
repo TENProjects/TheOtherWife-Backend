@@ -8,11 +8,15 @@ import { optionalAuthMiddleware } from "../middlewares/optional-auth.middleware.
 import { zodValidation } from "../middlewares/validation.js";
 import {
   updateVendorAvailabilitySchema,
+  updateVendorInspectionStatusSchema,
   updateVendorProfileSchema,
 } from "../zod-schema/vendor.schema.js";
 import { uploadBusinessLogo } from "../middlewares/file-upload.middleware.js";
 import { uploadBusinessLogoToCloudinary } from "../middlewares/cloudinary-upload.middleware.js";
-import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middleware.js";
+import {
+  adminRateLimitMiddleware,
+  adminSensitiveActionRateLimitMiddleware,
+} from "../middlewares/admin-rate-limit.middleware.js";
 
 /**
  * @swagger
@@ -66,7 +70,7 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  * /api/v1/vendors:
  *   get:
  *     summary: List all vendors (admin)
- *     tags: [Vendor]
+ *     tags: [Admin]
  *     parameters:
  *       - in: query
  *         name: status
@@ -116,7 +120,7 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  * /api/v1/vendors/pending:
  *   get:
  *     summary: List vendors pending approval (admin)
- *     tags: [Vendor]
+ *     tags: [Admin]
  *     responses:
  *       "200":
  *         description: Pending vendors fetched successfully
@@ -152,6 +156,101 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  *           application/json:
  *             schema:
  *               $ref: "#/components/responses/500"
+ */
+
+/**
+ * @swagger
+ * /api/v1/vendors/admin/{id}:
+ *   get:
+ *     summary: Get full vendor details by ID for any approval status (admin)
+ *     description: >-
+ *       Unlike GET /vendors/{id} (public, approved-only), this works for
+ *       pending, rejected, and suspended vendors too, and includes
+ *       admin-only fields: email/phone, rejectionReason, inspectionStatus,
+ *       application date, verification documents, and order count.
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       "200":
+ *         description: Vendor details fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: "#/components/schemas/ApiResponse"
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         vendor:
+ *                           type: object
+ *                           properties:
+ *                             numberOfOrders: { type: number }
+ *                             applicationDate: { type: string, format: date-time, nullable: true }
+ *                             cuisines: { type: array, items: { type: string } }
+ *                             businessType:
+ *                               type: string
+ *                               nullable: true
+ *                               description: >-
+ *                                 Always null — no business-type/category field
+ *                                 exists in the vendor schema, only `cuisines`.
+ *                             documents:
+ *                               type: object
+ *                               properties:
+ *                                 governmentId: { type: object, nullable: true }
+ *                                 businessCertificate: { type: object, nullable: true }
+ *                                 displayImage: { type: object, nullable: true }
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
+ * /api/v1/vendors/admin/{id}/inspection-status:
+ *   patch:
+ *     summary: Update a vendor's manual inspection/verification status (admin)
+ *     description: >-
+ *       Tracks an admin's manual document/business review progress,
+ *       separate from approvalStatus (approve/reject is a distinct action).
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [inspectionStatus]
+ *             properties:
+ *               inspectionStatus:
+ *                 type: string
+ *                 enum: [not_started, in_progress, completed]
+ *     responses:
+ *       "200":
+ *         description: Vendor inspection status updated successfully
+ *       "400":
+ *         description: Bad request
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
  */
 
 /**
@@ -597,6 +696,21 @@ class VendorRouter {
       roleGuardMiddleware(["admin"]),
       adminRateLimitMiddleware,
       this.vendorController.getAllVendorsForAdmin,
+    );
+    this.router.get(
+      "/admin/:id",
+      authMiddleware,
+      roleGuardMiddleware(["admin"]),
+      adminRateLimitMiddleware,
+      this.vendorController.getVendorDetailsForAdmin,
+    );
+    this.router.patch(
+      "/admin/:id/inspection-status",
+      authMiddleware,
+      roleGuardMiddleware(["admin"]),
+      adminSensitiveActionRateLimitMiddleware,
+      zodValidation(updateVendorInspectionStatusSchema),
+      this.vendorController.updateVendorInspectionStatus,
     );
     this.router.get("/:id", this.vendorController.getPublicVendorDetails);
     this.router.put(

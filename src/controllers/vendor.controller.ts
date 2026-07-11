@@ -302,6 +302,56 @@ export class VendorController {
     },
   );
 
+  // Admin: full vendor detail for any approval status (unlike the public
+  // GET /vendors/:id, which only returns approved vendors).
+  getVendorDetailsForAdmin = handleAsyncControl(
+    async (req: Request<{ id: string }>, res: Response): Promise<Response> => {
+      const vendorId = req.params.id;
+      const vendor = await this.vendorService.getVendorDetailsForAdmin(vendorId);
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Vendor details fetched successfully",
+        data: { vendor },
+      } as ApiResponse);
+    },
+  );
+
+  updateVendorInspectionStatus = handleAsyncControl(
+    async (
+      req: Request<
+        { id: string },
+        {},
+        { inspectionStatus: "not_started" | "in_progress" | "completed" }
+      >,
+      res: Response,
+    ): Promise<Response> => {
+      const vendorId = req.params.id;
+      const { inspectionStatus } = req.body;
+      const adminUserId = req.user?._id as unknown as string;
+
+      const result = await this.vendorService.updateVendorInspectionStatus(
+        vendorId,
+        inspectionStatus,
+      );
+
+      logAdminAction({
+        adminUserId,
+        action: "vendor.inspection_status_update",
+        targetType: "Vendor",
+        targetId: vendorId,
+        metadata: { inspectionStatus },
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Vendor inspection status updated successfully",
+        data: result,
+      } as ApiResponse);
+    },
+  );
+
   deleteVendorProfile = handleAsyncControl(
     async (req: Request, res: Response): Promise<Response> => {
       const userId = req?.user?._id as unknown as string;

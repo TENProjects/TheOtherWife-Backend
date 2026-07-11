@@ -50,6 +50,10 @@ export const updateVendorProfileSchema = z
     },
   );
 
+export const updateVendorInspectionStatusSchema = z.object({
+  inspectionStatus: z.enum(["not_started", "in_progress", "completed"]),
+});
+
 export const updateVendorAvailabilitySchema = z
   .object({
     isAvailable: z.coerce.boolean().optional(),

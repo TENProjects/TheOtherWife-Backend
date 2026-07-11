@@ -12,6 +12,7 @@ import Vendor from "../models/vendor.model.js";
 import Customer from "../models/customer.model.js";
 import Order from "../models/order.model.js";
 import Meal from "../models/meal.model.js";
+import FinancialSettings from "../models/financialSettings.model.js";
 
 export class UserService {
   getCurrentUser = async (userId: string) => {
@@ -319,7 +320,8 @@ export class UserService {
     const vendors = await Vendor.find()
       .populate("userId", "-passwordHash")
       .populate("addressId")
-      .sort({ createdAt: -1 })
+      // Vendor has no timestamps field — _id embeds creation time.
+      .sort({ _id: -1 })
       .limit(50);
 
     return vendors.map((vendor) => {
@@ -454,14 +456,47 @@ export class UserService {
     };
   };
 
-  getAdminOrderAnalytics = async () => {
+  // Human-readable label for order statuses shown in "Recent Rejected/Failed
+  // Orders" — derived from the real stored status enum, not a captured free-text
+  // reason (no order status currently captures one beyond vendor rejection).
+  private readonly rejectedOrderStatusLabels: Record<string, string> = {
+    vendor_rejected: "Vendor rejected",
+    payment_failed: "Payment failed",
+    customer_cancelled: "Cancelled by customer",
+    expired: "Order expired",
+  };
+
+  private resolvePeriodStart = (
+    period?: "today" | "week" | "month" | "all",
+  ): Date | null => {
+    const now = new Date();
+    switch (period) {
+      case "today":
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      case "week": {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 7);
+        return start;
+      }
+      case "month":
+        return new Date(now.getFullYear(), now.getMonth(), 1);
+      default:
+        return null;
+    }
+  };
+
+  getAdminOrderAnalytics = async (
+    orderSummaryPeriod?: "today" | "week" | "month" | "all",
+  ) => {
     const now = new Date();
     const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
     const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const orderSummaryPeriodStart = this.resolvePeriodStart(orderSummaryPeriod);
 
     const [
       statusBreakdown,
+      periodStatusBreakdown,
       paymentStatusBreakdown,
       revenueByMonth,
       locationAggregation,
@@ -469,8 +504,16 @@ export class UserService {
       trendingLastMonth,
       rejectedOrders,
       totalOrdersForLocationDist,
+      settings,
     ] = await Promise.all([
       Order.aggregate<{ _id: string; count: number }>([
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]),
+      Order.aggregate<{ _id: string; count: number }>([
+        ...(orderSummaryPeriodStart
+          ? [{ $match: { createdAt: { $gte: orderSummaryPeriodStart } } }]
+          : []),
         { $group: { _id: "$status", count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
@@ -478,7 +521,11 @@ export class UserService {
         { $group: { _id: "$paymentStatus", count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
-      Order.aggregate<{ _id: { year: number; month: number }; revenue: number }>([
+      Order.aggregate<{
+        _id: { year: number; month: number };
+        revenue: number;
+        commission: number;
+      }>([
         {
           $match: {
             paymentStatus: "succeeded",
@@ -489,6 +536,7 @@ export class UserService {
           $group: {
             _id: { year: { $year: "$createdAt" }, month: { $month: "$createdAt" } },
             revenue: { $sum: "$totalAmount" },
+            commission: { $sum: "$serviceCharge" },
           },
         },
         { $sort: { "_id.year": 1, "_id.month": 1 } },
@@ -526,18 +574,29 @@ export class UserService {
           },
         },
       ]),
-      Order.find({ status: "vendor_rejected" })
+      Order.find({
+        status: { $in: Object.keys(this.rejectedOrderStatusLabels) },
+      })
         .sort({ createdAt: -1 })
         .limit(10)
-        .select("_id createdAt"),
+        .select("_id createdAt status customerId")
+        .populate("customerId", "firstName lastName"),
       Order.countDocuments({
         "addressSnapshot.city": { $exists: true, $ne: "" },
       }),
+      FinancialSettings.findOne().select("paymentGateways"),
     ]);
 
     const lastMonthByMeal = new Map(
       trendingLastMonth.map((entry) => [entry._id, entry.orders]),
     );
+
+    // Only Paystack has a real payment integration (see payment.service.ts) —
+    // it's the only gateway fee that represents an actual processing cost,
+    // same derivation as FinancialsService.getAnalytics.
+    const gatewayFeePercent =
+      settings?.paymentGateways?.find((g) => g.key === "paystack")
+        ?.transactionFeePercent ?? 0;
 
     return {
       orderCategories: statusBreakdown.map((entry) => ({
@@ -548,10 +607,13 @@ export class UserService {
         status: entry._id,
         count: entry.count,
       })),
-      orderSummary: this.buildOrderSummary(statusBreakdown),
+      // Scoped by `orderSummaryPeriod` (today/week/month/all) — defaults to
+      // all-time when omitted. orderCategories above is always all-time.
+      orderSummary: this.buildOrderSummary(periodStatusBreakdown),
       revenueTrend: revenueByMonth.map((entry) => ({
         month: `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`,
         revenue: entry.revenue,
+        profit: entry.commission - (entry.revenue * gatewayFeePercent) / 100,
       })),
       trendingMenus: trendingThisMonth.map((entry) => ({
         name: entry._id,
@@ -573,13 +635,24 @@ export class UserService {
       // Gender is not currently captured anywhere in the user/customer schema —
       // returning an empty array rather than fabricating a breakdown.
       genderDist: [] as { gender: string; value: number; percent: number }[],
-      rejectedOrders: rejectedOrders.map((order) => ({
-        id: order._id.toString(),
-        date: (order as any).createdAt,
-        // Vendor rejection doesn't currently capture a reason (rejectVendorOrder
-        // only sets status) — null rather than a fabricated explanation.
-        reason: null as string | null,
-      })),
+      rejectedOrders: rejectedOrders.map((order) => {
+        const orderDoc = order as any;
+        const customer = orderDoc.customerId as
+          | { firstName?: string; lastName?: string }
+          | null
+          | undefined;
+        return {
+          id: orderDoc._id.toString(),
+          date: orderDoc.createdAt,
+          status: orderDoc.status,
+          customerName: customer
+            ? `${customer.firstName ?? ""} ${customer.lastName ?? ""}`.trim()
+            : null,
+          // Derived from the order's real status enum — no order status
+          // currently captures a free-text rejection/failure reason.
+          reason: this.rejectedOrderStatusLabels[orderDoc.status] ?? null,
+        };
+      }),
     };
   };
 

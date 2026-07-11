@@ -568,14 +568,21 @@ export class VendorService {
     const vendors = await Vendor.find(query)
       .populate("userId", "-passwordHash")
       .populate("addressId")
-      .sort({ createdAt: -1 })
+      // Vendor has no timestamps field — _id embeds creation time, so this
+      // still orders newest-first.
+      .sort({ _id: -1 })
       .limit(100);
 
     return vendors.map((vendor) => {
       const vendorObject = vendor.toObject();
+      const additionalData = (vendorObject.additionalData ?? {}) as Record<
+        string,
+        any
+      >;
       return {
         ...vendorObject,
         rating: vendorObject.ratingAverage ?? 0,
+        applicationDate: additionalData?.onboarding?.submittedAt ?? null,
         ratingSummary: {
           ratingAverage: vendorObject.ratingAverage ?? 0,
           ratingCount: vendorObject.ratingCount ?? 0,
@@ -583,6 +590,99 @@ export class VendorService {
         },
       };
     });
+  };
+
+  // Full admin-facing vendor detail — unlike getPublicVendorDetails, this
+  // works for vendors in ANY approvalStatus (pending/rejected/suspended too,
+  // not just approved) and includes admin-only fields.
+  getVendorDetailsForAdmin = async (vendorId: string) => {
+    if (!vendorId) {
+      throw new BadRequestException(
+        "Vendor ID is required",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    if (!mongoose.isValidObjectId(vendorId)) {
+      throw new BadRequestException(
+        "Invalid vendor ID",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const vendor = await Vendor.findById(vendorId)
+      .populate("userId", "-passwordHash")
+      .populate("addressId");
+
+    if (!vendor) {
+      throw new NotFoundException(
+        "Vendor not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    const numberOfOrders = await Order.countDocuments({ vendorId: vendor._id });
+
+    const vendorObject = vendor.toObject();
+    const { additionalData, ...vendorFields } = vendorObject as Record<
+      string,
+      any
+    >;
+    const additional = (additionalData ?? {}) as Record<string, any>;
+
+    return {
+      ...vendorFields,
+      numberOfOrders,
+      applicationDate: additional?.onboarding?.submittedAt ?? null,
+      cuisines: additional?.business?.cuisines ?? [],
+      // No dedicated business-type/category field exists anywhere in the
+      // vendor schema — only `cuisines` (a different concept: what they
+      // cook, not what kind of business they are). Explicitly null rather
+      // than fabricating a value.
+      businessType: null,
+      documents: additional?.documents ?? {
+        governmentId: null,
+        businessCertificate: null,
+        displayImage: null,
+      },
+      ratingSummary: {
+        ratingAverage: vendorFields.ratingAverage ?? 0,
+        ratingCount: vendorFields.ratingCount ?? 0,
+        ratingScore: vendorFields.ratingScore ?? 0,
+      },
+    };
+  };
+
+  updateVendorInspectionStatus = async (
+    vendorId: string,
+    inspectionStatus: "not_started" | "in_progress" | "completed",
+  ) => {
+    if (!vendorId) {
+      throw new BadRequestException(
+        "Vendor ID is required",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const vendor = await Vendor.findByIdAndUpdate(
+      vendorId,
+      { $set: { inspectionStatus } },
+      { new: true },
+    ).select("inspectionStatus businessName");
+
+    if (!vendor) {
+      throw new NotFoundException(
+        "Vendor not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    return { _id: vendor._id, inspectionStatus: vendor.inspectionStatus };
   };
 
   deleteVendorProfile = async (userId: string) => {

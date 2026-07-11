@@ -60,6 +60,16 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  *   get:
  *     summary: Get admin orders analytics breakdown
  *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [today, week, month, all]
+ *         description: >-
+ *           Scopes only `orderSummary` to this window; defaults to "all".
+ *           `orderCategories` is always all-time.
  *     responses:
  *       "200":
  *         description: Admin order analytics fetched successfully
@@ -89,6 +99,7 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  *                               count: { type: number }
  *                         orderSummary:
  *                           type: object
+ *                           description: Scoped by the `period` query param
  *                           properties:
  *                             completed: { type: number }
  *                             inProgress: { type: number }
@@ -101,6 +112,12 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  *                             properties:
  *                               month: { type: string, example: "2026-07" }
  *                               revenue: { type: number }
+ *                               profit:
+ *                                 type: number
+ *                                 description: >-
+ *                                   Commission (serviceCharge) minus the real
+ *                                   Paystack processing cost on that month's
+ *                                   revenue — same derivation as Financials.
  *                         trendingMenus:
  *                           type: array
  *                           description: Top 10 meals by order count this month
@@ -131,18 +148,24 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  *                             type: object
  *                         rejectedOrders:
  *                           type: array
- *                           description: Last 10 vendor-rejected orders
+ *                           description: >-
+ *                             Last 10 orders that ended in a failed/rejected/
+ *                             cancelled/expired state
  *                           items:
  *                             type: object
  *                             properties:
  *                               id: { type: string }
  *                               date: { type: string, format: date-time }
+ *                               status: { type: string }
+ *                               customerName: { type: string, nullable: true }
  *                               reason:
  *                                 type: string
  *                                 nullable: true
  *                                 description: >-
- *                                   Always null — vendor order rejection
- *                                   doesn't currently capture a reason.
+ *                                   Derived from the order's status enum
+ *                                   (e.g. "Payment failed", "Vendor rejected")
+ *                                   — no order status currently captures a
+ *                                   free-text reason.
  *       "401":
  *         description: Unauthorized
  *       "403":
