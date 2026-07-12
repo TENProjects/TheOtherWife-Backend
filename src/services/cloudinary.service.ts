@@ -19,7 +19,8 @@ export type CloudinaryAssetType =
   | "vendorDocument"
   | "vendorBusinessLogo"
   | "mealImage"
-  | "customerProfileImage";
+  | "customerProfileImage"
+  | "adminBlogImage";
 
 export class CloudinaryService {
   private static isConfigured = false;

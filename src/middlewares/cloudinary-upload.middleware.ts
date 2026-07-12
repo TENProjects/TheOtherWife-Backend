@@ -130,6 +130,33 @@ export const uploadBusinessLogoToCloudinary = async (
   }
 };
 
+export const uploadBlogFeaturedImageToCloudinary = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      next();
+      return;
+    }
+
+    const userId = requireUserId(req);
+    const result = await cloudinaryService.uploadImageBuffer(
+      file.buffer,
+      userId,
+      "adminBlogImage",
+      "blog-featured-image",
+    );
+
+    req.body.featuredImageUrl = result.secureUrl;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const uploadMealImagesToCloudinary = async (
   req: Request,
   _res: Response,

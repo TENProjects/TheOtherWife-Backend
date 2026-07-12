@@ -83,6 +83,10 @@ export const uploadBusinessLogo = withMulterErrorHandling(
   upload.single("businessLogo"),
 );
 
+export const uploadBlogFeaturedImage = withMulterErrorHandling(
+  upload.single("featuredImage"),
+);
+
 export const uploadMealImages = withMulterErrorHandling(
   upload.fields([
     { name: "primaryImage", maxCount: 1 },

@@ -25,7 +25,9 @@ import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middle
  *           "customer.group_assign", "customer.notes_update",
  *           "customer.reset_password", "financials.gateway_update",
  *           "financials.commission_update", "financials.tax_update",
- *           "financials.system_settings_update", "refund.approve", "refund.reject"
+ *           "financials.system_settings_update", "refund.approve", "refund.reject",
+ *           "blog.post_create", "blog.post_update", "blog.post_toggle_visibility",
+ *           "blog.post_archive", "blog.post_delete"
  *       - in: query
  *         name: targetType
  *         required: false
