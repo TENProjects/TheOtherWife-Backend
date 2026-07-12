@@ -165,6 +165,7 @@ export class MealService {
         categoryName: string;
         primaryImageUrl: string;
         tags: string[];
+        isAvailable?: boolean;
         publicationStatus?: "draft" | "published";
         preparationType: "freshly_cooked" | "cook_and_freeze" | "both";
         availability?: "daily" | "weekly" | "custom";
@@ -183,6 +184,7 @@ export class MealService {
         categoryName,
         primaryImageUrl,
         tags,
+        isAvailable,
         publicationStatus,
         preparationType,
         availability,
@@ -228,6 +230,10 @@ export class MealService {
             price,
             primaryImageUrl,
             tags,
+            // A new dish has nothing to hide it from customers by default — the
+            // schema-level default of `false` exists for the vendor's later
+            // "mark unavailable" toggle, not for meal creation.
+            isAvailable: isAvailable ?? true,
             publicationStatus: publicationStatus ?? "draft",
             preparationType,
             availability: availability ?? "daily",

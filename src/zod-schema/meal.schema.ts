@@ -95,6 +95,7 @@ export const createMealSchema = z.object({
   categoryName: z.string().trim().min(1),
   primaryImageUrl: cloudinaryAssetUrlSchema.optional(),
   tags: z.preprocess(parseStringArrayField, nonEmptyStringArraySchema).default([]),
+  isAvailable: z.coerce.boolean().optional(),
   publicationStatus: z.enum(["draft", "published"]).optional(),
   preparationType: preparationTypeSchema,
   availability: availabilitySchema.default("daily"),
