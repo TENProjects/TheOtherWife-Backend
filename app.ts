@@ -37,6 +37,7 @@ import { adminRefundRequestRouter } from "./src/routes/admin-refund-request.rout
 import { adminUserDirectoryRouter } from "./src/routes/admin-user-directory.route.js";
 import { adminBlogRouter } from "./src/routes/admin-blog.route.js";
 import { blogRouter } from "./src/routes/blog.route.js";
+import { adminVendorRelationsRouter } from "./src/routes/admin-vendor-relations.route.js";
 import { favouriteRouter } from "./src/routes/favourite.route.js";
 import { mealPlanRouter } from "./src/routes/meal-plan.route.js";
 import "./src/signals/push-notification.signal.js";
@@ -134,6 +135,10 @@ export class App {
     this.app.use("/api/v1/admin/user-directory", adminUserDirectoryRouter);
     this.app.use("/api/v1/admin/blog-posts", adminBlogRouter);
     this.app.use("/api/v1/blog-posts", blogRouter);
+    this.app.use(
+      "/api/v1/admin/vendor-relations",
+      adminVendorRelationsRouter,
+    );
     this.app.use("/api/v1/analytics", analyticsRouter);
     this.app.use("/api/v1/favourites", favouriteRouter);
     this.app.use("/api/v1/meal-plans", mealPlanRouter);
