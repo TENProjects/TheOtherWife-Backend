@@ -103,6 +103,54 @@ export class OrderController {
     },
   );
 
+  markOrderPreparing = handleAsyncControl(
+    async (req: Request<{ orderId: string }>, res: Response): Promise<Response> => {
+      const userId = req.user?._id as unknown as string;
+      const order = await this.orderService.markOrderPreparing(
+        userId,
+        req.params.orderId,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Order marked as preparing",
+        data: order,
+      } as ApiResponse);
+    },
+  );
+
+  markOrderOutForDelivery = handleAsyncControl(
+    async (req: Request<{ orderId: string }>, res: Response): Promise<Response> => {
+      const userId = req.user?._id as unknown as string;
+      const order = await this.orderService.markOrderOutForDelivery(
+        userId,
+        req.params.orderId,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Order marked as out for delivery",
+        data: order,
+      } as ApiResponse);
+    },
+  );
+
+  markOrderDelivered = handleAsyncControl(
+    async (req: Request<{ orderId: string }>, res: Response): Promise<Response> => {
+      const userId = req.user?._id as unknown as string;
+      const order = await this.orderService.markOrderDelivered(
+        userId,
+        req.params.orderId,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Order marked as delivered",
+        data: order,
+      } as ApiResponse);
+    },
+  );
+
   getAllOrdersForAdmin = handleAsyncControl(
     async (req: Request, res: Response): Promise<Response> => {
       const { status, page, limit } = req.query;

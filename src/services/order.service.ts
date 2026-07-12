@@ -205,6 +205,117 @@ export class OrderService {
     return { order };
   };
 
+  // Post-acceptance delivery progress — "confirmed" (accepted) is the only
+  // valid entry point; each step only advances one stage at a time, mirroring
+  // accept/reject's ownership + status-guard + signal-emit shape exactly so
+  // push notifications (src/signals/push-notification.signal.ts) and any
+  // future consumer of order.status_changed keep working unchanged.
+  markOrderPreparing = async (userId: string, orderId: string) => {
+    const vendor = await this.getVendorByUserId(userId);
+
+    const order = await Order.findOne({ _id: orderId, vendorId: vendor._id });
+
+    if (!order) {
+      throw new NotFoundException(
+        "Order not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    if (order.status !== "confirmed") {
+      throw new BadRequestException(
+        "Only confirmed orders can be marked as preparing",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    order.status = "preparing";
+    await order.save();
+
+    await appSignalDispatcher.emit("order.status_changed", {
+      orderId: order._id.toString(),
+      customerUserId: order.customerId.toString(),
+      vendorId: order.vendorId.toString(),
+      previousStatus: "confirmed",
+      currentStatus: "preparing",
+    });
+
+    return { order };
+  };
+
+  markOrderOutForDelivery = async (userId: string, orderId: string) => {
+    const vendor = await this.getVendorByUserId(userId);
+
+    const order = await Order.findOne({ _id: orderId, vendorId: vendor._id });
+
+    if (!order) {
+      throw new NotFoundException(
+        "Order not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    if (order.status !== "preparing") {
+      throw new BadRequestException(
+        "Only orders being prepared can be marked out for delivery",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    order.status = "out_for_delivery";
+    await order.save();
+
+    await appSignalDispatcher.emit("order.status_changed", {
+      orderId: order._id.toString(),
+      customerUserId: order.customerId.toString(),
+      vendorId: order.vendorId.toString(),
+      previousStatus: "preparing",
+      currentStatus: "out_for_delivery",
+    });
+
+    return { order };
+  };
+
+  markOrderDelivered = async (userId: string, orderId: string) => {
+    const vendor = await this.getVendorByUserId(userId);
+
+    const order = await Order.findOne({ _id: orderId, vendorId: vendor._id });
+
+    if (!order) {
+      throw new NotFoundException(
+        "Order not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    if (order.status !== "out_for_delivery") {
+      throw new BadRequestException(
+        "Only orders out for delivery can be marked as delivered",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    order.status = "delivered";
+    order.deliveredAt = new Date();
+    await order.save();
+
+    await appSignalDispatcher.emit("order.status_changed", {
+      orderId: order._id.toString(),
+      customerUserId: order.customerId.toString(),
+      vendorId: order.vendorId.toString(),
+      previousStatus: "out_for_delivery",
+      currentStatus: "delivered",
+    });
+
+    return { order };
+  };
+
   // Admin: list orders across all vendors/customers, optionally filtered by
   // status, with pagination and a flag for orders with a pending refund request.
   getAllOrdersForAdmin = async (filters: {
@@ -312,10 +423,11 @@ export class OrderService {
           { $match: { paymentStatus: "succeeded" } },
           { $group: { _id: null, revenue: { $sum: "$totalAmount" } } },
         ]),
-        // Orders still awaiting payment or vendor confirmation past the
-        // configured threshold — "confirmed" is this system's terminal
-        // successful state (no separate "delivered" status exists), so it's
-        // excluded here, matching buildOrderSummary's in-progress bucket.
+        // Orders still awaiting payment or vendor acceptance past the
+        // configured threshold. Post-acceptance delivery progress
+        // (confirmed/preparing/out_for_delivery/delivered) isn't counted as
+        // "delayed" here — this metric is specifically about orders stuck
+        // before the vendor has even acknowledged them.
         Order.countDocuments({
           status: { $in: ["pending_payment", "paid"] },
           createdAt: { $lt: delayThresholdDate },

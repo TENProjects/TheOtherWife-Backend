@@ -792,8 +792,10 @@ export class UserService {
   };
 
   // Buckets the raw order status enum into the three coarse categories the
-  // admin dashboard displays. The order schema has no distinct "delivered"
-  // terminal state beyond "confirmed", so that's treated as the completed bucket.
+  // admin dashboard displays. "delivered" is the true terminal success state;
+  // "confirmed"/"preparing"/"out_for_delivery" are now mid-flight delivery
+  // progress (vendors can still advance any order sitting at "confirmed",
+  // including ones created before this lifecycle existed).
   private buildOrderSummary = (
     statusBreakdown: { _id: string; count: number }[],
   ) => {
@@ -806,9 +808,9 @@ export class UserService {
     ]);
 
     statusBreakdown.forEach(({ _id: status, count }) => {
-      if (status === "confirmed") summary.completed += count;
+      if (status === "delivered") summary.completed += count;
       else if (cancelledStatuses.has(status)) summary.cancelled += count;
-      else summary.inProgress += count; // pending_payment, paid
+      else summary.inProgress += count; // pending_payment, paid, confirmed, preparing, out_for_delivery
     });
 
     return summary;

@@ -103,6 +103,84 @@ import {
 
 /**
  * @swagger
+ * /api/v1/orders/vendor/{orderId}/preparing:
+ *   patch:
+ *     summary: Mark a confirmed order as preparing
+ *     description: Only valid from "confirmed" — advances the delivery-progress lifecycle by one step.
+ *     tags: [Order]
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       "200":
+ *         description: Order marked as preparing
+ *       "400":
+ *         description: Bad request
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
+ * /api/v1/orders/vendor/{orderId}/out-for-delivery:
+ *   patch:
+ *     summary: Mark a preparing order as out for delivery
+ *     description: Only valid from "preparing".
+ *     tags: [Order]
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       "200":
+ *         description: Order marked as out for delivery
+ *       "400":
+ *         description: Bad request
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
+ * /api/v1/orders/vendor/{orderId}/delivered:
+ *   patch:
+ *     summary: Mark an out-for-delivery order as delivered
+ *     description: Only valid from "out_for_delivery" — the terminal successful state.
+ *     tags: [Order]
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       "200":
+ *         description: Order marked as delivered
+ *       "400":
+ *         description: Bad request
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
  * /api/v1/orders/me:
  *   get:
  *     summary: Get current user's orders
@@ -385,6 +463,27 @@ class OrderRouter {
       roleGuardMiddleware(["vendor"]),
       statusCheck(["approved"]),
       this.orderController.rejectVendorOrder,
+    );
+    this.router.patch(
+      "/vendor/:orderId/preparing",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      statusCheck(["approved"]),
+      this.orderController.markOrderPreparing,
+    );
+    this.router.patch(
+      "/vendor/:orderId/out-for-delivery",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      statusCheck(["approved"]),
+      this.orderController.markOrderOutForDelivery,
+    );
+    this.router.patch(
+      "/vendor/:orderId/delivered",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      statusCheck(["approved"]),
+      this.orderController.markOrderDelivered,
     );
     this.router.get(
       "/me",

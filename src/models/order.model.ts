@@ -41,6 +41,7 @@ export interface OrderDocument extends Document {
   status: string;
   paymentStatus: string;
   paidAt?: Date;
+  deliveredAt?: Date;
 }
 
 const OrderSchema = new Schema(
@@ -215,6 +216,13 @@ const OrderSchema = new Schema(
         "pending_payment",
         "paid",
         "confirmed",
+        // Post-acceptance delivery progress — added for real-time order
+        // tracking. "confirmed" remains the entry point set by the vendor's
+        // accept endpoint; these three are set by the new preparing/
+        // out-for-delivery/delivered vendor endpoints in that order.
+        "preparing",
+        "out_for_delivery",
+        "delivered",
         "payment_failed",
         "customer_cancelled",
         "vendor_rejected",
@@ -228,6 +236,10 @@ const OrderSchema = new Schema(
       default: "pending",
     },
     paidAt: {
+      type: Date,
+      required: false,
+    },
+    deliveredAt: {
       type: Date,
       required: false,
     },
