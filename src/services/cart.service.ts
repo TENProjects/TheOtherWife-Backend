@@ -12,6 +12,10 @@ import { transaction } from "../util/transaction.util.js";
 import {
   computeCustomizationDelta,
   MealCustomization,
+  DEFAULT_PACKAGING_OPTIONS,
+  DEFAULT_PROTEIN_OPTIONS,
+  DEFAULT_ADDON_OPTIONS,
+  DEFAULT_DRINK_OPTIONS,
 } from "../util/meal-customization.util.js";
 
 const resolveOptionPrice = (
@@ -31,11 +35,24 @@ const resolveOptionPrice = (
   return match.price;
 };
 
+// The Figma/brand design always presents a Packaging + Protein picker on the
+// meal-details screen, even for meals the vendor hasn't configured per-meal
+// options for. When a meal's own list is empty, fall back to this shared
+// default catalog (mirrored exactly on the frontend in
+// MealDetailsScreen.tsx) so the picker is never empty and pricing is always
+// resolved server-side against a known list — never trusted from the client.
+const effectiveOptions = (mealOptions: MealOption[], fallback: MealOption[]) =>
+  mealOptions.length > 0 ? mealOptions : fallback;
+
 class CartBase {
   resolveCustomization = (
     meal: MealDocument,
     customization: MealCustomization | undefined,
   ): MealCustomization | undefined => {
+    // Required-ness is unchanged from before: only meals with a real,
+    // vendor-configured catalog force a packaging/protein pick. Plain
+    // "quick add" (no customization at all, e.g. from Home/Category) must
+    // keep working for every meal, exactly as it did previously.
     if (
       meal.packagingOptions.length > 0 &&
       !customization?.packaging?.name
@@ -63,12 +80,32 @@ class CartBase {
       return undefined;
     }
 
+    // Resolution falls back to the shared default catalog when the meal has
+    // no real options — this is the actual fix: the meal-details screen's
+    // UI always offers a picker (matching the Figma design) even for meals
+    // with no vendor-configured options, so a submitted selection must
+    // still resolve to a real, server-known price instead of being
+    // rejected as "not a valid option."
+    const packagingCatalog = effectiveOptions(
+      meal.packagingOptions,
+      DEFAULT_PACKAGING_OPTIONS,
+    );
+    const proteinCatalog = effectiveOptions(
+      meal.proteinOptions,
+      DEFAULT_PROTEIN_OPTIONS,
+    );
+    const addOnCatalog = effectiveOptions(meal.addOns, DEFAULT_ADDON_OPTIONS);
+    const drinkCatalog = effectiveOptions(
+      meal.drinksOptions,
+      DEFAULT_DRINK_OPTIONS,
+    );
+
     return {
       packaging: customization.packaging
         ? {
             name: customization.packaging.name,
             price: resolveOptionPrice(
-              meal.packagingOptions,
+              packagingCatalog,
               customization.packaging.name,
             ),
           }
@@ -77,17 +114,17 @@ class CartBase {
       proteinSelections: customization.proteinSelections?.map(
         (selection) => ({
           name: selection.name,
-          price: resolveOptionPrice(meal.proteinOptions, selection.name),
+          price: resolveOptionPrice(proteinCatalog, selection.name),
           quantity: selection.quantity ?? 1,
         }),
       ),
       addOnSelections: customization.addOnSelections?.map((selection) => ({
         name: selection.name,
-        price: resolveOptionPrice(meal.addOns, selection.name),
+        price: resolveOptionPrice(addOnCatalog, selection.name),
       })),
       drinkSelections: customization.drinkSelections?.map((selection) => ({
         name: selection.name,
-        price: resolveOptionPrice(meal.drinksOptions, selection.name),
+        price: resolveOptionPrice(drinkCatalog, selection.name),
         quantity: selection.quantity ?? 1,
       })),
       customProteinRequests: customization.customProteinRequests,
