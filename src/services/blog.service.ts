@@ -270,4 +270,88 @@ export class BlogService {
       );
     }
   };
+
+  private formatAuthorName = (
+    author: { firstName?: string; lastName?: string } | null | undefined,
+  ): string =>
+    author
+      ? `${author.firstName ?? ""} ${author.lastName ?? ""}`.trim()
+      : "TheOtherWife Team";
+
+  // Public, unauthenticated — only ever returns published posts. Drafts and
+  // archived posts must never leak here.
+  getPublishedPosts = async (
+    filters: { page?: number; limit?: number } = {},
+  ) => {
+    const { page = 1, limit = 20 } = filters;
+    const safeLimit = Math.min(Math.max(limit, 1), 50);
+    const safePage = Math.max(page, 1);
+
+    const query = { status: "published" as const };
+
+    const [posts, total] = await Promise.all([
+      BlogPost.find(query)
+        .populate("authorId", "firstName lastName")
+        .select("title slug featuredImageUrl quote views publishedAt")
+        .sort({ publishedAt: -1 })
+        .skip((safePage - 1) * safeLimit)
+        .limit(safeLimit),
+      BlogPost.countDocuments(query),
+    ]);
+
+    return {
+      posts: posts.map((post) => {
+        const postObject = post.toObject() as any;
+        return {
+          title: postObject.title,
+          slug: postObject.slug,
+          featuredImageUrl: postObject.featuredImageUrl ?? null,
+          quote: postObject.quote ?? null,
+          author: this.formatAuthorName(postObject.authorId),
+          views: postObject.views,
+          publishedAt: postObject.publishedAt,
+        };
+      }),
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        total,
+        totalPages: Math.max(Math.ceil(total / safeLimit), 1),
+      },
+    };
+  };
+
+  // Public, unauthenticated. Increments the view counter on every fetch —
+  // a simple counter with no dedup, matching the admin dashboard's
+  // "Total Views" stat.
+  getPublishedPostBySlug = async (slug: string) => {
+    const post = await BlogPost.findOneAndUpdate(
+      { slug, status: "published" },
+      { $inc: { views: 1 } },
+      { new: true },
+    ).populate("authorId", "firstName lastName");
+
+    if (!post) {
+      throw new NotFoundException(
+        "Blog post not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    const postObject = post.toObject() as any;
+
+    return {
+      post: {
+        title: postObject.title,
+        slug: postObject.slug,
+        featuredImageUrl: postObject.featuredImageUrl ?? null,
+        content: postObject.content,
+        quote: postObject.quote ?? null,
+        author: this.formatAuthorName(postObject.authorId),
+        views: postObject.views,
+        publishedAt: postObject.publishedAt,
+      },
+    };
+  };
 }

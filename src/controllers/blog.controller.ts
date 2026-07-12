@@ -184,4 +184,35 @@ export class BlogController {
       return res.status(HttpStatus.NO_CONTENT).send();
     },
   );
+
+  getPublishedPosts = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const { page, limit } = req.query;
+      const result = await this.blogService.getPublishedPosts({
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      });
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Blog posts fetched successfully",
+        data: result,
+      } as ApiResponse);
+    },
+  );
+
+  getPublishedPostBySlug = handleAsyncControl(
+    async (
+      req: Request<{ slug: string }>,
+      res: Response,
+    ): Promise<Response> => {
+      const result = await this.blogService.getPublishedPostBySlug(
+        req.params.slug,
+      );
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Blog post fetched successfully",
+        data: result,
+      } as ApiResponse);
+    },
+  );
 }
