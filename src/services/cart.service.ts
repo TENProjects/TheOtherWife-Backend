@@ -175,6 +175,7 @@ class CartBase {
         : undefined;
 
     let cart = await Cart.findOne({ customerId }).session(session);
+    let justCreatedWithMeal = false;
 
     if (!cart) {
       const effectiveUnitPrice =
@@ -199,6 +200,7 @@ class CartBase {
         ],
         { session },
       );
+      justCreatedWithMeal = true;
     }
 
     if (
@@ -212,7 +214,15 @@ class CartBase {
       );
     }
 
-    action(cart, meal, quantity, resolvedCustomization);
+    // The cart-creation branch above already embeds this exact meal at the
+    // requested quantity/customization as the cart's first item — re-running
+    // the `add` action here would double the quantity it just set. Only
+    // skipped for `add`: increment/decrement/remove reaching an empty cart
+    // is already an unusual path, and preserving their current behavior here
+    // keeps this fix scoped to the bug it targets.
+    if (!(justCreatedWithMeal && action === CartActions.add)) {
+      action(cart, meal, quantity, resolvedCustomization);
+    }
     this.calculateTotalAmount(cart);
     await cart.save();
     return cart;
