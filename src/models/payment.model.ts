@@ -3,7 +3,13 @@
 import mongoose, { Document, Schema, model } from "mongoose";
 
 export interface PaymentDocument extends Document {
-  orderId: mongoose.Types.ObjectId;
+  // Only one of orderId/mealPlanId is set, matching `context`. orderId
+  // remains required for the default ("order") context — see the schema
+  // definition below; it's typed optional here only to accommodate the
+  // meal_plan context.
+  orderId?: mongoose.Types.ObjectId;
+  mealPlanId?: mongoose.Types.ObjectId;
+  context: "order" | "meal_plan";
   customerId: mongoose.Types.ObjectId;
   vendorId: mongoose.Types.ObjectId;
   provider: string;
@@ -29,8 +35,24 @@ const PaymentSchema = new Schema(
     orderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Order",
-      required: true,
+      // Only required for the default "order" context — meal-plan payments
+      // (context: "meal_plan") reference mealPlanId instead.
+      required: function (this: { context?: string }) {
+        return this.context !== "meal_plan";
+      },
       index: true,
+    },
+    mealPlanId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MealPlan",
+      required: false,
+      index: true,
+    },
+    context: {
+      type: String,
+      enum: ["order", "meal_plan"],
+      required: true,
+      default: "order",
     },
     customerId: {
       type: mongoose.Schema.Types.ObjectId,

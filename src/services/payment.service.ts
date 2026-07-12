@@ -2,9 +2,10 @@
 
 import crypto from "crypto";
 import { ClientSession } from "mongoose";
-import Payment from "../models/payment.model.js";
+import Payment, { PaymentDocument } from "../models/payment.model.js";
 import Order from "../models/order.model.js";
 import Cart from "../models/cart.model.js";
+import ScheduledMeal from "../models/scheduledMeal.model.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
 import { InternalServerError } from "../errors/internal-server.error.js";
@@ -157,6 +158,15 @@ export class PaymentService {
         HttpStatus.NOT_FOUND,
         ErrorCode.RESOURCE_NOT_FOUND,
       );
+    }
+
+    // Meal-plan payments have no linked Order — they pay upfront for a
+    // batch of ScheduledMeal instances instead, so this branch mirrors only
+    // the Payment + ScheduledMeal side of the logic below (no cart-clear,
+    // wallet, promo, or vendor-settlement steps, since none of those apply
+    // to a meal-plan batch).
+    if (payment.context === "meal_plan") {
+      return this.handleMealPlanPaystackEvent(payment, event);
     }
 
     if (event.event === "charge.failed") {
@@ -324,6 +334,104 @@ export class PaymentService {
         currentStatus: "paid",
       });
     }
+
+    return result;
+  };
+
+  // Meal-plan counterpart of the charge.success/charge.failed handling
+  // above — same idempotency guard (skip if already "succeeded"), same
+  // amount-mismatch check, but only touches Payment + the ScheduledMeal
+  // batch it paid for (no Order, no wallet, no promo, no cart, no vendor
+  // settlement — none of those apply to a meal-plan batch).
+  private handleMealPlanPaystackEvent = async (
+    payment: PaymentDocument,
+    event: any,
+  ) => {
+    if (event.event === "charge.failed") {
+      const result = await transaction.use(
+        async (
+          session: ClientSession,
+          paymentId: string,
+          providerPayload: Record<string, unknown>,
+        ) => {
+          const paymentRecord = await Payment.findById(paymentId).session(session);
+
+          if (!paymentRecord) {
+            throw new NotFoundException(
+              "Payment not found",
+              HttpStatus.NOT_FOUND,
+              ErrorCode.RESOURCE_NOT_FOUND,
+            );
+          }
+
+          if (paymentRecord.status === "succeeded") {
+            return { handled: true, payment: paymentRecord };
+          }
+
+          paymentRecord.status = "failed";
+          paymentRecord.providerPayload = providerPayload;
+          await paymentRecord.save({ session });
+
+          await ScheduledMeal.updateMany(
+            { paymentId: paymentRecord._id },
+            { $set: { paymentStatus: "failed" } },
+            { session },
+          );
+
+          return { handled: true, payment: paymentRecord };
+        },
+      )(payment._id.toString(), event.data);
+
+      return result;
+    }
+
+    if (payment.status === "succeeded") {
+      return { handled: true, payment };
+    }
+
+    const paidAmount = Number(event.data?.amount ?? 0) / 100;
+
+    if (paidAmount !== payment.amount) {
+      throw new BadRequestException(
+        "Payment amount mismatch",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const result = await transaction.use(
+      async (session: ClientSession, paymentId: string, providerPayload: any) => {
+        const paymentRecord = await Payment.findById(paymentId).session(session);
+
+        if (!paymentRecord) {
+          throw new NotFoundException(
+            "Payment not found",
+            HttpStatus.NOT_FOUND,
+            ErrorCode.RESOURCE_NOT_FOUND,
+          );
+        }
+
+        if (paymentRecord.status === "succeeded") {
+          return { handled: true, payment: paymentRecord };
+        }
+
+        paymentRecord.status = "succeeded";
+        paymentRecord.providerTransactionId = String(providerPayload.id ?? "");
+        paymentRecord.providerPayload = providerPayload;
+        paymentRecord.paidAt = providerPayload.paid_at
+          ? new Date(providerPayload.paid_at)
+          : new Date();
+        await paymentRecord.save({ session });
+
+        await ScheduledMeal.updateMany(
+          { paymentId: paymentRecord._id },
+          { $set: { paymentStatus: "succeeded" } },
+          { session },
+        );
+
+        return { handled: true, payment: paymentRecord };
+      },
+    )(payment._id.toString(), event.data);
 
     return result;
   };

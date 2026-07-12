@@ -1,5 +1,7 @@
 /** @format */
 
+import crypto from "crypto";
+import { ClientSession } from "mongoose";
 import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
@@ -7,15 +9,25 @@ import { NotFoundException } from "../errors/not-found-exception.error.js";
 import MealPlan, { MealPlanCustomization, MealPlanTimeWindow } from "../models/mealPlan.model.js";
 import ScheduledMeal from "../models/scheduledMeal.model.js";
 import Meal from "../models/meal.model.js";
+import Payment from "../models/payment.model.js";
+import User from "../models/user.model.js";
+import { transaction } from "../util/transaction.util.js";
 import {
   combineDateAndTime,
   generateDeliveryDates,
 } from "../util/meal-plan-recurrence.util.js";
+import { PaymentService } from "./payment.service.js";
 
 const EDIT_CUTOFF_HOURS = 12;
 const MONTHLY_DISCOUNT_RATE = 0.1;
 
 export class MealPlanService {
+  private paymentService: PaymentService;
+
+  constructor() {
+    this.paymentService = new PaymentService();
+  }
+
   private ensureEditableWindow = (
     deliveryDate: Date,
     deliveryTimeWindow: MealPlanTimeWindow,
@@ -160,99 +172,227 @@ export class MealPlanService {
     return this.summarizePlan(plan, scheduledMeals);
   };
 
+  // Adding meals is the moment a real charge happens: the batch of newly
+  // scheduled meals is priced (with the same monthly discount used for
+  // display elsewhere) and paid for upfront via Paystack — there is no
+  // recurring/subscription billing. Mirrors checkout.service.ts's
+  // confirmCheckout pattern (Order+Payment there, MealPlan+ScheduledMeal+
+  // Payment here): DB writes happen in one transaction, the Paystack call
+  // happens after it commits, and a failed Paystack init rolls the batch's
+  // payment status back to "failed" rather than leaving it ambiguous.
   addMealToPlan = async (
     userId: string,
     planId: string,
     data: { mealId: string; customization?: MealPlanCustomization },
   ) => {
-    const plan = await MealPlan.findOne({ _id: planId, customerId: userId });
+    const user = await User.findById(userId).select("email");
 
-    if (!plan) {
+    if (!user) {
       throw new NotFoundException(
-        "Meal plan not found",
+        "User not found",
         HttpStatus.NOT_FOUND,
-        ErrorCode.RESOURCE_NOT_FOUND,
+        ErrorCode.AUTH_USER_NOT_FOUND,
       );
     }
 
-    if (plan.status !== "active") {
-      throw new BadRequestException(
-        "Cannot add meals to a cancelled plan",
-        HttpStatus.BAD_REQUEST,
-        ErrorCode.VALIDATION_ERROR,
+    const { plan, scheduledMeals, payment, batchTotal } = await transaction.use(
+      async (session: ClientSession) => {
+        const planDoc = await MealPlan.findOne({
+          _id: planId,
+          customerId: userId,
+        }).session(session);
+
+        if (!planDoc) {
+          throw new NotFoundException(
+            "Meal plan not found",
+            HttpStatus.NOT_FOUND,
+            ErrorCode.RESOURCE_NOT_FOUND,
+          );
+        }
+
+        if (planDoc.status !== "active") {
+          throw new BadRequestException(
+            "Cannot add meals to a cancelled plan",
+            HttpStatus.BAD_REQUEST,
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        const meal = await Meal.findOne({
+          _id: data.mealId,
+          isDeleted: false,
+          publicationStatus: "published",
+          isAvailable: true,
+        }).session(session);
+
+        if (!meal) {
+          throw new NotFoundException(
+            "Meal not found",
+            HttpStatus.NOT_FOUND,
+            ErrorCode.RESOURCE_NOT_FOUND,
+          );
+        }
+
+        if (
+          planDoc.vendorId &&
+          planDoc.vendorId.toString() !== meal.vendorId.toString()
+        ) {
+          throw new BadRequestException(
+            "A meal plan currently supports meals from one vendor at a time",
+            HttpStatus.BAD_REQUEST,
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        if (!planDoc.vendorId) {
+          planDoc.vendorId = meal.vendorId;
+          await planDoc.save({ session });
+        }
+
+        const today = new Date(
+          Date.UTC(
+            new Date().getUTCFullYear(),
+            new Date().getUTCMonth(),
+            new Date().getUTCDate(),
+          ),
+        );
+
+        const deliveryDates = generateDeliveryDates(
+          planDoc.startDate,
+          planDoc.endDate,
+          planDoc.frequency,
+          planDoc.customDays,
+        ).filter((date) => date.getTime() >= today.getTime());
+
+        if (deliveryDates.length === 0) {
+          throw new BadRequestException(
+            "No delivery dates fall within this plan's remaining date range",
+            HttpStatus.BAD_REQUEST,
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        const customization = data.customization ?? planDoc.defaultCustomization;
+
+        const insertedScheduledMeals = await ScheduledMeal.insertMany(
+          deliveryDates.map((deliveryDate) => ({
+            planId: planDoc._id,
+            customerId: userId,
+            vendorId: meal.vendorId,
+            mealId: meal._id,
+            mealName: meal.name,
+            mealImageUrl: meal.primaryImageUrl,
+            price: meal.price,
+            deliveryDate,
+            deliveryTimeWindow: planDoc.deliveryTimeWindow,
+            customization,
+            status: "scheduled",
+            paymentStatus: "pending",
+          })),
+          { session },
+        );
+
+        const batchSubtotal = insertedScheduledMeals.reduce(
+          (total, scheduledMeal) => total + scheduledMeal.price,
+          0,
+        );
+        const currentBatchTotal =
+          planDoc.paymentType === "monthly"
+            ? Number((batchSubtotal * (1 - MONTHLY_DISCOUNT_RATE)).toFixed(2))
+            : batchSubtotal;
+
+        const [newPayment] = await Payment.create(
+          [
+            {
+              context: "meal_plan",
+              mealPlanId: planDoc._id,
+              customerId: userId,
+              vendorId: meal.vendorId,
+              provider: "paystack",
+              reference: `tow_mp_${crypto.randomUUID().replace(/-/g, "")}`,
+              amount: currentBatchTotal,
+              currency: planDoc.currency,
+              status: "initialized",
+              providerPayload: {
+                scheduledMealCount: insertedScheduledMeals.length,
+                batchSubtotal,
+              },
+            },
+          ],
+          { session },
+        );
+
+        await ScheduledMeal.updateMany(
+          { _id: { $in: insertedScheduledMeals.map((m) => m._id) } },
+          { $set: { paymentId: newPayment._id } },
+          { session },
+        );
+
+        const allScheduledMeals = await ScheduledMeal.find({
+          planId: planDoc._id,
+          status: { $ne: "cancelled" },
+        })
+          .select("price")
+          .session(session);
+
+        return {
+          plan: this.summarizePlan(planDoc, allScheduledMeals),
+          scheduledMeals: insertedScheduledMeals,
+          payment: newPayment,
+          batchTotal: currentBatchTotal,
+        };
+      },
+    )();
+
+    // Free batches (shouldn't normally happen — meal prices are validated
+    // > 0 elsewhere — but guards against ever calling Paystack with 0).
+    if (batchTotal <= 0) {
+      const paidAt = new Date();
+      const updatedPayment = await Payment.findByIdAndUpdate(
+        payment._id,
+        { $set: { status: "succeeded", paidAt } },
+        { new: true },
       );
-    }
-
-    const meal = await Meal.findOne({
-      _id: data.mealId,
-      isDeleted: false,
-      publicationStatus: "published",
-      isAvailable: true,
-    });
-
-    if (!meal) {
-      throw new NotFoundException(
-        "Meal not found",
-        HttpStatus.NOT_FOUND,
-        ErrorCode.RESOURCE_NOT_FOUND,
+      await ScheduledMeal.updateMany(
+        { paymentId: payment._id },
+        { $set: { paymentStatus: "succeeded" } },
       );
+      return { plan, scheduledMeals, payment: updatedPayment };
     }
 
-    if (plan.vendorId && plan.vendorId.toString() !== meal.vendorId.toString()) {
-      throw new BadRequestException(
-        "A meal plan currently supports meals from one vendor at a time",
-        HttpStatus.BAD_REQUEST,
-        ErrorCode.VALIDATION_ERROR,
+    try {
+      const paymentInitialization = await this.paymentService.initializePaystackPayment({
+        email: user.email,
+        amount: payment.amount,
+        reference: payment.reference,
+        orderId: planId,
+        paymentId: payment._id.toString(),
+      });
+
+      const updatedPayment = await Payment.findByIdAndUpdate(
+        payment._id,
+        {
+          $set: {
+            status: "pending_customer_action",
+            accessCode: paymentInitialization.access_code,
+            authorizationUrl: paymentInitialization.authorization_url,
+            providerPayload: paymentInitialization,
+          },
+        },
+        { new: true },
       );
+
+      return { plan, scheduledMeals, payment: updatedPayment };
+    } catch (error) {
+      await Promise.all([
+        Payment.findByIdAndUpdate(payment._id, { $set: { status: "failed" } }),
+        ScheduledMeal.updateMany(
+          { paymentId: payment._id },
+          { $set: { paymentStatus: "failed" } },
+        ),
+      ]);
+      throw error;
     }
-
-    if (!plan.vendorId) {
-      plan.vendorId = meal.vendorId;
-      await plan.save();
-    }
-
-    const today = new Date(
-      Date.UTC(
-        new Date().getUTCFullYear(),
-        new Date().getUTCMonth(),
-        new Date().getUTCDate(),
-      ),
-    );
-
-    const deliveryDates = generateDeliveryDates(
-      plan.startDate,
-      plan.endDate,
-      plan.frequency,
-      plan.customDays,
-    ).filter((date) => date.getTime() >= today.getTime());
-
-    const customization = data.customization ?? plan.defaultCustomization;
-
-    const scheduledMeals = await ScheduledMeal.insertMany(
-      deliveryDates.map((deliveryDate) => ({
-        planId: plan._id,
-        customerId: userId,
-        vendorId: meal.vendorId,
-        mealId: meal._id,
-        mealName: meal.name,
-        mealImageUrl: meal.primaryImageUrl,
-        price: meal.price,
-        deliveryDate,
-        deliveryTimeWindow: plan.deliveryTimeWindow,
-        customization,
-        status: "scheduled",
-      })),
-    );
-
-    const allScheduledMeals = await ScheduledMeal.find({
-      planId: plan._id,
-      status: { $ne: "cancelled" },
-    }).select("price");
-
-    return {
-      plan: this.summarizePlan(plan, allScheduledMeals),
-      scheduledMeals,
-    };
   };
 
   getPlans = async (userId: string) => {

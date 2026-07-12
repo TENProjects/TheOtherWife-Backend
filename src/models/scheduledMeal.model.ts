@@ -19,6 +19,8 @@ export interface ScheduledMealDocument extends Document {
   customization: MealPlanCustomization;
   status: "scheduled" | "cancelled" | "completed";
   cancelledAt?: Date;
+  paymentStatus: "pending" | "succeeded" | "failed";
+  paymentId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -104,6 +106,20 @@ const ScheduledMealSchema = new Schema(
     },
     cancelledAt: {
       type: Date,
+      required: false,
+    },
+    // Paid upfront in the batch that created this scheduled meal (see
+    // MealPlanService.addMealToPlan) — mirrors the linked Payment's status
+    // rather than duplicating payment logic here.
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "succeeded", "failed"],
+      required: true,
+      default: "pending",
+    },
+    paymentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Payment",
       required: false,
     },
   },
