@@ -235,6 +235,14 @@ export class VendorWalletService {
       );
     }
 
+    // Fall back to the vendor's saved payout bank details when the request
+    // doesn't override them, so the vendor isn't forced to retype them on
+    // every withdrawal.
+    const savedBankDetails = vendor.payoutSettings?.bankDetails;
+    const bankName = input.bankName ?? savedBankDetails?.bankName;
+    const accountName = input.accountName ?? savedBankDetails?.accountName;
+    const accountNumber = input.accountNumber ?? savedBankDetails?.accountNumber;
+
     const payoutRequest = await VendorPayoutRequest.create({
       vendorId: vendor._id,
       requestedAmount: input.amount,
@@ -243,14 +251,55 @@ export class VendorWalletService {
       status: "requested",
       paymentStatus: "unpaid",
       note: input.note,
-      bankDetailsSnapshot: {
-        bankName: input.bankName,
-        accountName: input.accountName,
-        accountNumber: input.accountNumber,
-      },
+      bankDetailsSnapshot: { bankName, accountName, accountNumber },
     });
 
     return { payoutRequest };
+  };
+
+  getVendorPayoutSettings = async (vendorUserId: string) => {
+    const vendor = await this.getVendorByUserId(vendorUserId);
+    return { payoutSettings: vendor.payoutSettings };
+  };
+
+  updateVendorPayoutSettings = async (
+    vendorUserId: string,
+    input: {
+      autoPayoutEnabled?: boolean;
+      schedule?: "daily" | "weekly" | "biweekly" | "monthly";
+      minimumAmount?: number;
+      defaultMethod?: "bank" | "card";
+      bankDetails?: {
+        bankName?: string;
+        accountName?: string;
+        accountNumber?: string;
+      };
+    },
+  ) => {
+    const vendor = await this.getVendorByUserId(vendorUserId);
+
+    if (input.autoPayoutEnabled !== undefined) {
+      vendor.payoutSettings.autoPayoutEnabled = input.autoPayoutEnabled;
+    }
+    if (input.schedule !== undefined) {
+      vendor.payoutSettings.schedule = input.schedule;
+    }
+    if (input.minimumAmount !== undefined) {
+      vendor.payoutSettings.minimumAmount = input.minimumAmount;
+    }
+    if (input.defaultMethod !== undefined) {
+      vendor.payoutSettings.defaultMethod = input.defaultMethod;
+    }
+    if (input.bankDetails !== undefined) {
+      vendor.payoutSettings.bankDetails = {
+        ...vendor.payoutSettings.bankDetails,
+        ...input.bankDetails,
+      };
+    }
+
+    await vendor.save();
+
+    return { payoutSettings: vendor.payoutSettings };
   };
 
   getVendorPayoutRequests = async (vendorUserId: string) => {

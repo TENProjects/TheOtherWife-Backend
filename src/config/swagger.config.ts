@@ -1043,6 +1043,26 @@ const swaggerDefinition = {
           accountNumber: { type: "string" },
         },
       },
+      VendorPayoutSettingsUpdatePayload: {
+        type: "object",
+        properties: {
+          autoPayoutEnabled: { type: "boolean" },
+          schedule: {
+            type: "string",
+            enum: ["daily", "weekly", "biweekly", "monthly"],
+          },
+          minimumAmount: { type: "number", minimum: 0 },
+          defaultMethod: { type: "string", enum: ["bank", "card"] },
+          bankDetails: {
+            type: "object",
+            properties: {
+              bankName: { type: "string" },
+              accountName: { type: "string" },
+              accountNumber: { type: "string" },
+            },
+          },
+        },
+      },
       AdminVendorPayoutRequestUpdatePayload: {
         type: "object",
         properties: {

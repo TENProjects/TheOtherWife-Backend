@@ -4,6 +4,18 @@ import mongoose, { Document, Schema, model } from "mongoose";
 import { defaultVendorOpeningHours } from "../util/vendor-opening-hours.util.js";
 import type { VendorOpeningHours } from "../util/vendor-opening-hours.util.js";
 
+export interface VendorPayoutSettings {
+  autoPayoutEnabled: boolean;
+  schedule: "daily" | "weekly" | "biweekly" | "monthly";
+  minimumAmount: number;
+  defaultMethod: "bank" | "card";
+  bankDetails?: {
+    bankName?: string;
+    accountName?: string;
+    accountNumber?: string;
+  };
+}
+
 export interface VendorDocument extends Document {
   userId: mongoose.Types.ObjectId;
   addressId: mongoose.Types.ObjectId;
@@ -17,6 +29,7 @@ export interface VendorDocument extends Document {
   inspectionStatus: "not_started" | "in_progress" | "completed";
   isAvailable: boolean;
   openingHours: VendorOpeningHours;
+  payoutSettings: VendorPayoutSettings;
   approvedBy: mongoose.Types.ObjectId;
   approvedAt: Date;
   rejectionReason: string;
@@ -107,6 +120,41 @@ const VendorSchema = new Schema({
     type: OpeningHoursSchema,
     required: true,
     default: () => JSON.parse(JSON.stringify(defaultVendorOpeningHours)),
+  },
+  payoutSettings: {
+    type: {
+      autoPayoutEnabled: { type: Boolean, required: true, default: true },
+      schedule: {
+        type: String,
+        enum: ["daily", "weekly", "biweekly", "monthly"],
+        required: true,
+        default: "daily",
+      },
+      minimumAmount: { type: Number, required: true, default: 0, min: 0 },
+      defaultMethod: {
+        type: String,
+        enum: ["bank", "card"],
+        required: true,
+        default: "bank",
+      },
+      bankDetails: {
+        type: {
+          bankName: { type: String, required: false },
+          accountName: { type: String, required: false },
+          accountNumber: { type: String, required: false },
+        },
+        required: false,
+        _id: false,
+      },
+    },
+    required: true,
+    default: () => ({
+      autoPayoutEnabled: true,
+      schedule: "daily",
+      minimumAmount: 0,
+      defaultMethod: "bank",
+    }),
+    _id: false,
   },
   approvedBy: {
     type: mongoose.Schema.Types.ObjectId,

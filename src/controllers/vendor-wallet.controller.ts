@@ -80,6 +80,50 @@ export class VendorWalletController {
     });
   });
 
+  getPayoutSettings = handleAsyncControl(async (req: Request, res: Response) => {
+    const userId = req.user?._id as unknown as string;
+    const result = await this.vendorWalletService.getVendorPayoutSettings(userId);
+
+    return res.status(HttpStatus.OK).json({
+      status: "ok",
+      message: "Vendor payout settings fetched successfully",
+      data: result,
+    });
+  });
+
+  updatePayoutSettings = handleAsyncControl(
+    async (
+      req: Request<
+        {},
+        {},
+        {
+          autoPayoutEnabled?: boolean;
+          schedule?: "daily" | "weekly" | "biweekly" | "monthly";
+          minimumAmount?: number;
+          defaultMethod?: "bank" | "card";
+          bankDetails?: {
+            bankName?: string;
+            accountName?: string;
+            accountNumber?: string;
+          };
+        }
+      >,
+      res: Response,
+    ) => {
+      const userId = req.user?._id as unknown as string;
+      const result = await this.vendorWalletService.updateVendorPayoutSettings(
+        userId,
+        req.body,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Vendor payout settings updated successfully",
+        data: result,
+      });
+    },
+  );
+
   getAdminPayoutRequests = handleAsyncControl(async (req: Request, res: Response) => {
     const status = req.query.status as string | undefined;
     const result = await this.vendorWalletService.getAdminPayoutRequests(status);

@@ -5,6 +5,8 @@ import { VendorWalletController } from "../controllers/vendor-wallet.controller.
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
 import { statusCheck } from "../middlewares/status-check.middleware.js";
+import { zodValidation } from "../middlewares/validation.js";
+import { updateVendorPayoutSettingsSchema } from "../zod-schema/vendor.schema.js";
 
 /**
  * @swagger
@@ -42,6 +44,38 @@ import { statusCheck } from "../middlewares/status-check.middleware.js";
  *     responses:
  *       "200":
  *         description: Vendor wallet transactions fetched successfully
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+/**
+ * @swagger
+ * /api/v1/vendor-wallet/settings:
+ *   get:
+ *     summary: Get current vendor's payout settings
+ *     tags: [Vendor Wallet]
+ *     responses:
+ *       "200":
+ *         description: Vendor payout settings fetched successfully
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *   patch:
+ *     summary: Update current vendor's payout settings
+ *     tags: [Vendor Wallet]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: "#/components/schemas/VendorPayoutSettingsUpdatePayload"
+ *     responses:
+ *       "200":
+ *         description: Vendor payout settings updated successfully
+ *       "400":
+ *         description: Bad request
  *       "401":
  *         description: Unauthorized
  *       "403":
@@ -113,6 +147,21 @@ class VendorWalletRouter {
       roleGuardMiddleware(["vendor"]),
       statusCheck(["approved"]),
       this.vendorWalletController.getPayoutRequests,
+    );
+    this.router.get(
+      "/settings",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      statusCheck(["approved"]),
+      this.vendorWalletController.getPayoutSettings,
+    );
+    this.router.patch(
+      "/settings",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      statusCheck(["approved"]),
+      zodValidation(updateVendorPayoutSettingsSchema),
+      this.vendorWalletController.updatePayoutSettings,
     );
   }
 }

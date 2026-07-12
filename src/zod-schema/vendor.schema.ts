@@ -65,3 +65,24 @@ export const updateVendorAvailabilitySchema = z
       message: "At least one field is required",
     },
   );
+
+const payoutBankDetailsSchema = z.object({
+  bankName: z.string().trim().min(1).optional(),
+  accountName: z.string().trim().min(1).optional(),
+  accountNumber: z.string().trim().min(1).optional(),
+});
+
+export const updateVendorPayoutSettingsSchema = z
+  .object({
+    autoPayoutEnabled: z.coerce.boolean().optional(),
+    schedule: z.enum(["daily", "weekly", "biweekly", "monthly"]).optional(),
+    minimumAmount: z.coerce.number().min(0).optional(),
+    defaultMethod: z.enum(["bank", "card"]).optional(),
+    bankDetails: z.preprocess(parseJsonObject, payoutBankDetailsSchema).optional(),
+  })
+  .refine(
+    (value) => Object.values(value).some((field) => field !== undefined),
+    {
+      message: "At least one field is required",
+    },
+  );
