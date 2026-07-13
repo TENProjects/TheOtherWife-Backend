@@ -23,6 +23,7 @@ import {
   frontendUrl,
   googleClientId,
   googleAudiences,
+  hostName,
   jwtRefreshSecret,
   nodeEnv,
   resetPasswordTokenTtlMinutes,
@@ -50,9 +51,12 @@ export class AuthService {
         );
 
         const { template } = getFormattedData(htmlTemplate, user);
-        const baseHost = frontendUrl.endsWith("/")
-          ? frontendUrl.slice(0, -1)
-          : frontendUrl;
+        // /api/v1/auth/verify is a backend route (see auth.route.ts), not a
+        // frontend page — must resolve against this server's own host, not
+        // FRONTEND_URL (which points at the customer web/app property).
+        const baseHost = hostName.endsWith("/")
+          ? hostName.slice(0, -1)
+          : hostName;
         const html = template.replaceAll(
           "{{verificationUrl}}",
           `${baseHost}/api/v1/auth/verify?token=${user.emailToken}`,
