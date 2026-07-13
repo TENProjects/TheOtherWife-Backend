@@ -33,6 +33,7 @@ type EnvConfig = {
   FRONTEND_URL: string;
   RESET_PASSWORD_TOKEN_TTL_MINUTES: number;
   SEARCH_RADIUS_KM: number;
+  CRON_SECRET?: string;
 };
 
 const getEnvConfig = (): EnvConfig => {
@@ -64,6 +65,7 @@ const getEnvConfig = (): EnvConfig => {
       getEnv("RESET_PASSWORD_TOKEN_TTL_MINUTES") || "30",
     ),
     SEARCH_RADIUS_KM: Number(getEnv("SEARCH_RADIUS_KM") || "25"),
+    CRON_SECRET: getEnv("CRON_SECRET"),
   };
 };
 

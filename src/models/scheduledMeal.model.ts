@@ -21,6 +21,10 @@ export interface ScheduledMealDocument extends Document {
   cancelledAt?: Date;
   paymentStatus: "pending" | "succeeded" | "failed";
   paymentId?: mongoose.Types.ObjectId;
+  // Set once this scheduled meal is converted into a real vendor-facing
+  // Order (see MealPlanFulfillmentService) — presence of this field is what
+  // prevents converting the same scheduled meal twice.
+  orderId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -120,6 +124,11 @@ const ScheduledMealSchema = new Schema(
     paymentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Payment",
+      required: false,
+    },
+    orderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
       required: false,
     },
   },

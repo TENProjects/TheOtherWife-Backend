@@ -28,6 +28,7 @@ export const customizationSchema = z.object({
 export const createMealPlanSchema = z
   .object({
     name: z.string().trim().min(1),
+    addressId: z.string().trim().min(1),
     frequency: frequencySchema,
     customDays: z.array(z.string().trim().min(1)).optional(),
     startDate: z.coerce.date(),
@@ -53,6 +54,7 @@ export const createMealPlanSchema = z
 export const updateMealPlanSchema = z
   .object({
     name: z.string().trim().min(1).optional(),
+    addressId: z.string().trim().min(1).optional(),
     frequency: frequencySchema.optional(),
     customDays: z.array(z.string().trim().min(1)).optional(),
     startDate: z.coerce.date().optional(),

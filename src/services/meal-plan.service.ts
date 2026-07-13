@@ -11,6 +11,7 @@ import ScheduledMeal from "../models/scheduledMeal.model.js";
 import Meal from "../models/meal.model.js";
 import Payment from "../models/payment.model.js";
 import User from "../models/user.model.js";
+import Address from "../models/address.model.js";
 import { transaction } from "../util/transaction.util.js";
 import {
   combineDateAndTime,
@@ -72,6 +73,7 @@ export class MealPlanService {
     userId: string,
     data: {
       name: string;
+      addressId: string;
       frequency: "daily" | "weekdays" | "weekends" | "custom";
       customDays?: string[];
       startDate: Date;
@@ -81,8 +83,22 @@ export class MealPlanService {
       paymentType: "weekly" | "monthly" | "per_meal";
     },
   ) => {
+    const address = await Address.findOne({
+      _id: data.addressId,
+      userId,
+    });
+
+    if (!address) {
+      throw new NotFoundException(
+        "Address not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
     const plan = await MealPlan.create({
       customerId: userId,
+      addressId: address._id,
       name: data.name,
       frequency: data.frequency,
       customDays: data.customDays,
@@ -101,6 +117,7 @@ export class MealPlanService {
     planId: string,
     data: {
       name?: string;
+      addressId?: string;
       frequency?: "daily" | "weekdays" | "weekends" | "custom";
       customDays?: string[];
       startDate?: Date;
@@ -118,6 +135,23 @@ export class MealPlanService {
         HttpStatus.NOT_FOUND,
         ErrorCode.RESOURCE_NOT_FOUND,
       );
+    }
+
+    if (data.addressId !== undefined) {
+      const address = await Address.findOne({
+        _id: data.addressId,
+        userId,
+      });
+
+      if (!address) {
+        throw new NotFoundException(
+          "Address not found",
+          HttpStatus.NOT_FOUND,
+          ErrorCode.RESOURCE_NOT_FOUND,
+        );
+      }
+
+      plan.addressId = address._id;
     }
 
     if (data.name !== undefined) plan.name = data.name;

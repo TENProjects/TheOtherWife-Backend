@@ -775,6 +775,10 @@ const swaggerDefinition = {
             nullable: true,
             description: "Set once the first meal is added to the plan; all meals in a plan must share one vendor.",
           },
+          addressId: {
+            type: "string",
+            description: "Delivery address for every scheduled meal in this plan, chosen once at creation.",
+          },
           name: { type: "string" },
           frequency: { $ref: "#/components/schemas/MealPlanFrequency" },
           customDays: {
@@ -821,6 +825,11 @@ const swaggerDefinition = {
           customization: { $ref: "#/components/schemas/MealPlanCustomization" },
           status: { $ref: "#/components/schemas/ScheduledMealStatus" },
           cancelledAt: { type: "string", format: "date-time", nullable: true },
+          orderId: {
+            type: "string",
+            nullable: true,
+            description: "Set once this scheduled meal has been converted into a real vendor-facing Order (MealPlanFulfillmentService), within the fulfillment lead time of its delivery window.",
+          },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
         },
@@ -829,6 +838,7 @@ const swaggerDefinition = {
         type: "object",
         required: [
           "name",
+          "addressId",
           "frequency",
           "startDate",
           "endDate",
@@ -838,6 +848,7 @@ const swaggerDefinition = {
         ],
         properties: {
           name: { type: "string", example: "Office Lunch Plan" },
+          addressId: { type: "string", description: "Delivery address for every scheduled meal in this plan" },
           frequency: { $ref: "#/components/schemas/MealPlanFrequency" },
           customDays: {
             type: "array",

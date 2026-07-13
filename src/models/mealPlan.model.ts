@@ -15,6 +15,11 @@ export interface MealPlanTimeWindow {
 export interface MealPlanDocument extends Document {
   customerId: mongoose.Types.ObjectId;
   vendorId?: mongoose.Types.ObjectId;
+  // Every scheduled meal in this plan delivers here — captured once at plan
+  // creation rather than resolved from the customer's "default" address at
+  // fulfillment time, so a later address change elsewhere doesn't silently
+  // redirect an in-progress plan's deliveries.
+  addressId: mongoose.Types.ObjectId;
   name: string;
   frequency: "daily" | "weekdays" | "weekends" | "custom";
   customDays?: string[];
@@ -65,6 +70,11 @@ const MealPlanSchema = new Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Vendor",
       required: false,
+    },
+    addressId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Address",
+      required: true,
     },
     name: {
       type: String,
