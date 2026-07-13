@@ -377,6 +377,8 @@ export class VendorService {
         businessLogoUrl?: string;
         expoTokens?: string[];
         pushNotificationsEnabled?: boolean;
+        cuisines?: string[];
+        yearsOfExperience?: number;
       },
     ) => {
       if (!userId) {
@@ -396,6 +398,8 @@ export class VendorService {
         businessLogoUrl,
         expoTokens,
         pushNotificationsEnabled,
+        cuisines,
+        yearsOfExperience,
       } = body;
 
       const vendorData: Record<string, any> = {};
@@ -412,6 +416,16 @@ export class VendorService {
       if (expoTokens !== undefined) vendorData.expoTokens = expoTokens;
       if (pushNotificationsEnabled !== undefined) {
         vendorData.pushNotificationsEnabled = pushNotificationsEnabled;
+      }
+      // Post-onboarding edits (Edit Business screen) — dot-path updates so
+      // the rest of additionalData (location/socials/payout/documents/etc.)
+      // is left untouched, matching how onboarding itself only ever touches
+      // its own step's slice of additionalData.
+      if (cuisines !== undefined) {
+        vendorData["additionalData.business.cuisines"] = cuisines;
+      }
+      if (yearsOfExperience !== undefined) {
+        vendorData["additionalData.business.yearsOfExperience"] = yearsOfExperience;
       }
 
       const vendor = await Vendor.findOneAndUpdate(

@@ -15,8 +15,22 @@ import { VendorWalletService } from "./vendor-wallet.service.js";
 
 // How far ahead of a scheduled meal's delivery window it turns into a real,
 // vendor-visible Order — the vendor then Accepts/Mark-Readys/Delivers it
-// through the exact same flow as any other order.
+// through the exact same flow as any other order. This is the ideal target
+// once the cron runs frequently (e.g. every 15 min on Vercel Pro / a real
+// cron daemon on Digital Ocean).
 export const MEAL_PLAN_FULFILLMENT_LEAD_HOURS = 3;
+
+// TEMPORARY: Vercel's Hobby plan only allows once-a-day cron schedules (see
+// vercel.json), so a single run must catch everything due before the NEXT
+// run — otherwise meals due later the same day would only get converted
+// after their delivery window has already passed. Once running on a more
+// frequent scheduler (Digital Ocean), lower this back down to match
+// MEAL_PLAN_FULFILLMENT_LEAD_HOURS by deleting this override.
+const CRON_INTERVAL_SAFETY_HOURS = 26;
+export const EFFECTIVE_LEAD_HOURS = Math.max(
+  MEAL_PLAN_FULFILLMENT_LEAD_HOURS,
+  CRON_INTERVAL_SAFETY_HOURS,
+);
 
 export class MealPlanFulfillmentService {
   private vendorWalletService: VendorWalletService;
@@ -156,7 +170,7 @@ export class MealPlanFulfillmentService {
       orderId: { $exists: false },
     });
 
-    const cutoff = Date.now() + MEAL_PLAN_FULFILLMENT_LEAD_HOURS * 60 * 60 * 1000;
+    const cutoff = Date.now() + EFFECTIVE_LEAD_HOURS * 60 * 60 * 1000;
     const due = candidates.filter(
       (scheduledMeal) =>
         combineDateAndTime(

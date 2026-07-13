@@ -4,7 +4,7 @@ import MealPlan from "../models/mealPlan.model.js";
 import ScheduledMeal from "../models/scheduledMeal.model.js";
 import Order from "../models/order.model.js";
 import { combineDateAndTime } from "../util/meal-plan-recurrence.util.js";
-import { MEAL_PLAN_FULFILLMENT_LEAD_HOURS } from "./meal-plan-fulfillment.service.js";
+import { EFFECTIVE_LEAD_HOURS } from "./meal-plan-fulfillment.service.js";
 
 // How far past its delivery-window start an unresolved scheduled meal is
 // still shown, so admins can see recently-missed ones without the list
@@ -73,7 +73,7 @@ export class AdminMealPlanService {
     const now = Date.now();
     const overdueFloor = new Date(now - OVERDUE_LOOKBACK_HOURS * 60 * 60 * 1000);
     const upcomingCeiling = new Date(
-      now + Math.max(MEAL_PLAN_FULFILLMENT_LEAD_HOURS, UPCOMING_WINDOW_HOURS) * 60 * 60 * 1000,
+      now + Math.max(EFFECTIVE_LEAD_HOURS, UPCOMING_WINDOW_HOURS) * 60 * 60 * 1000,
     );
 
     const scheduledMeals = await ScheduledMeal.find({
@@ -110,7 +110,7 @@ export class AdminMealPlanService {
         flag =
           hoursToWindow <= 0
             ? "overdue_not_converted"
-            : hoursToWindow <= MEAL_PLAN_FULFILLMENT_LEAD_HOURS
+            : hoursToWindow <= EFFECTIVE_LEAD_HOURS
               ? "due_soon_not_yet_converted"
               : "on_track";
       } else if (

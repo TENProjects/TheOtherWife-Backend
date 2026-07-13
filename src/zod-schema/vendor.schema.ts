@@ -33,6 +33,19 @@ const openingHoursSchema = z.object({
   sunday: dailyOpeningHoursSchema,
 });
 
+// Vendor app's Edit Business screen sends this as a comma-joined string
+// (multipart form field, not JSON) — split/trim/dedupe into a real array.
+const cuisinesListSchema = z.preprocess((value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((cuisine) => cuisine.trim())
+      .filter((cuisine) => cuisine.length > 0);
+  }
+  return value;
+}, z.array(z.string().trim().min(1)));
+
 export const updateVendorProfileSchema = z
   .object({
     firstName: z.string().trim().optional(),
@@ -43,6 +56,8 @@ export const updateVendorProfileSchema = z
     businessLogoUrl: cloudinaryAssetUrlSchema.optional(),
     expoTokens: z.preprocess(parseJsonObject, z.array(z.string().trim())).optional(),
     pushNotificationsEnabled: z.coerce.boolean().optional(),
+    cuisines: cuisinesListSchema.optional(),
+    yearsOfExperience: z.coerce.number().min(0).optional(),
   })
   .refine(
     (value) => Object.values(value).some((field) => field !== undefined),

@@ -402,6 +402,10 @@ import {
  *                 type: array
  *                 items: { type: string }
  *               pushNotificationsEnabled: { type: boolean }
+ *               cuisines:
+ *                 type: string
+ *                 description: Comma-separated cuisine list (e.g. "Local,Continental"), stored under additionalData.business.cuisines
+ *               yearsOfExperience: { type: number }
  *               businessLogo:
  *                 type: string
  *                 format: binary
