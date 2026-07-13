@@ -2,6 +2,7 @@
 
 import z from "zod";
 import { cloudinaryAssetUrlSchema } from "./cloudinary.schema.js";
+import { phoneNumberSchema } from "./auth.schema.js";
 
 const parseJsonArray = (value: unknown) => {
   if (typeof value === "string") {
@@ -21,7 +22,7 @@ export const updateCurrentCustomerProfileSchema = z
     firstName: z.string().trim().optional(),
     lastName: z.string().trim().optional(),
     email: z.email().trim().optional(),
-    phoneNumber: z.string().trim().optional(),
+    phoneNumber: phoneNumberSchema.optional(),
     expoTokens: z.preprocess(parseJsonArray, z.array(z.string().trim())).optional(),
     pushNotificationsEnabled: z.coerce.boolean().optional(),
   })

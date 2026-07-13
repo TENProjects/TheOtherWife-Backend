@@ -3,7 +3,16 @@
 import z from "zod";
 
 export const emailSchema = z.email().trim().max(255);
-export const phoneNumberSchema = z.string().min(5).max(20);
+// E.164 international format: a leading "+", first digit 1-9, 7-14 more
+// digits (8-15 digits total) — e.g. +2347065104123. No arbitrary min/max
+// character-length check; the number itself must actually look valid.
+export const phoneNumberSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^\+[1-9]\d{7,14}$/,
+    "Phone number must be a valid international number, e.g. +2347065104123",
+  );
 
 export const registerUserSchema = z
   .object({
