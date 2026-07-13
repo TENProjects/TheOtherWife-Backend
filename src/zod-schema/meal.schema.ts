@@ -92,6 +92,9 @@ export const createMealSchema = z.object({
   name: z.string().trim().min(1),
   description: z.string().trim().min(1),
   price: z.coerce.number().positive(),
+  // Vendor-set discount display (spec section 5.2) — when provided, must be
+  // strictly greater than `price` (that's what makes it a "discount").
+  originalPrice: z.coerce.number().positive().optional(),
   categoryName: z.string().trim().min(1),
   primaryImageUrl: cloudinaryAssetUrlSchema.optional(),
   tags: z.preprocess(parseStringArrayField, nonEmptyStringArraySchema).default([]),
@@ -117,13 +120,18 @@ export const createMealSchema = z.object({
     .preprocess(parseJsonArrayField, mealOptionArraySchema)
     .default([]),
   addOns: z.preprocess(parseJsonArrayField, mealOptionArraySchema).default([]),
-});
+}).refine(
+  (value) => value.originalPrice === undefined || value.originalPrice > value.price,
+  { message: "originalPrice must be greater than price", path: ["originalPrice"] },
+);
 
 export const updateMealSchema = z
   .object({
     name: z.string().trim().min(1).optional(),
     description: z.string().trim().min(1).optional(),
     price: z.coerce.number().positive().optional(),
+    // Pass 0 to clear an existing discount — updateMeal treats 0 as "unset".
+    originalPrice: z.coerce.number().min(0).optional(),
     categoryName: z.string().trim().min(1).optional(),
     primaryImageUrl: cloudinaryAssetUrlSchema.optional(),
     additionalImages: z
@@ -157,4 +165,12 @@ export const updateMealSchema = z
     {
       message: "At least one field is required",
     },
+  )
+  .refine(
+    (value) =>
+      value.originalPrice === undefined ||
+      value.originalPrice === 0 ||
+      value.price === undefined ||
+      value.originalPrice > value.price,
+    { message: "originalPrice must be greater than price (or 0 to clear it)", path: ["originalPrice"] },
   );

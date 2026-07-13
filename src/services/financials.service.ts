@@ -5,8 +5,11 @@ import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
 import Order from "../models/order.model.js";
+import Payment from "../models/payment.model.js";
+import RefundRequest from "../models/refundRequest.model.js";
 import VendorPayoutRequest from "../models/vendorPayoutRequest.model.js";
 import FinancialSettings from "../models/financialSettings.model.js";
+import { BadRequestException } from "../errors/bad-request-exception.error.js";
 
 export class FinancialsService {
   private percentChange = (current: number, previous: number): number => {
@@ -318,6 +321,43 @@ export class FinancialsService {
     };
   };
 
+  getVatSettings = async () => {
+    const settings = await this.getOrCreateSettings();
+    return {
+      vatEnabled: settings.vatEnabled,
+      vatRate: 7.5,
+      vatToggledAt: settings.vatToggledAt ?? null,
+      vatToggledBy: settings.vatToggledBy ?? null,
+    };
+  };
+
+  // Requires explicit re-confirmation (payload.confirm === true, enforced by
+  // updateVatSettingsSchema) — mirrors the spec's "second confirmation"
+  // requirement for enabling VAT. Only stamps the audit trail when the value
+  // actually changes, so vatToggledAt/vatToggledBy reflect the last real flip.
+  updateVatSettings = async (
+    payload: { enabled: boolean },
+    adminUserId: string,
+  ) => {
+    const settings = await this.getOrCreateSettings();
+
+    if (settings.vatEnabled !== payload.enabled) {
+      settings.vatEnabled = payload.enabled;
+      settings.vatToggledAt = new Date();
+      settings.vatToggledBy = new mongoose.Types.ObjectId(adminUserId);
+    }
+
+    settings.updatedBy = new mongoose.Types.ObjectId(adminUserId);
+    await settings.save();
+
+    return {
+      vatEnabled: settings.vatEnabled,
+      vatRate: 7.5,
+      vatToggledAt: settings.vatToggledAt ?? null,
+      vatToggledBy: settings.vatToggledBy ?? null,
+    };
+  };
+
   getSystemSettings = async () => {
     const settings = await this.getOrCreateSettings();
     return {
@@ -354,6 +394,150 @@ export class FinancialsService {
       refundAutoApprovalThreshold: settings.refundAutoApprovalThreshold,
       orderDelayThresholdMinutes: settings.orderDelayThresholdMinutes,
       minimumWithdrawalAmount: settings.minimumWithdrawalAmount,
+    };
+  };
+
+  // Financial & Commission Spec v1.0, section 7.1 — full per-order profit
+  // breakdown. Deliberately independent of getSummary/getAnalytics above
+  // (which predate this spec and are left untouched) so nothing already
+  // consuming those is affected.
+  getOrderProfitBreakdown = async (orderId: string) => {
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new NotFoundException(
+        "Order not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    const payment = await Payment.findOne({ orderId: order._id });
+
+    // "Refund Absorbed" is Scenario B only (section 7.1) — Scenario A's
+    // TOW-side cost is just the Paystack fee, already reflected below.
+    const approvedRefund = await RefundRequest.findOne({
+      orderId: order._id,
+      status: "approved",
+    });
+    const refundAbsorbed = approvedRefund?.amount ?? 0;
+
+    const promoDiscountCost = Math.round((order.discountAmount ?? 0) * 0.2);
+    const towCommission = payment?.vendorPlatformFeeAmount ?? 0;
+    const paystackFeeAmount = payment?.paystackFeeAmount ?? 0;
+
+    const netProfit =
+      towCommission +
+      order.serviceCharge +
+      (order.taxAmount ?? 0) -
+      paystackFeeAmount -
+      refundAbsorbed -
+      promoDiscountCost;
+
+    return {
+      orderId: order._id.toString(),
+      mealSubtotal: order.subtotal,
+      processingFee: order.serviceCharge,
+      vat: order.taxAmount ?? 0,
+      customerTotal: order.totalAmount,
+      paystackFee: paystackFeeAmount,
+      homeChefPayout: payment?.vendorNetAmount ?? 0,
+      towCommission,
+      refundAbsorbed,
+      promoDiscountCost,
+      towNetProfit: netProfit,
+    };
+  };
+
+  // Section 7.2 — aggregated dashboard summary cards for a time range.
+  getNetProfitSummary = async (range?: { from?: Date; to?: Date }) => {
+    if (range?.from && range?.to && range.from.getTime() > range.to.getTime()) {
+      throw new BadRequestException(
+        "`from` must be before `to`",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const createdAtMatch: Record<string, Date> = {};
+    if (range?.from) createdAtMatch.$gte = range.from;
+    if (range?.to) createdAtMatch.$lte = range.to;
+
+    const orderMatch: Record<string, unknown> = { paymentStatus: "succeeded" };
+    if (Object.keys(createdAtMatch).length > 0) {
+      orderMatch.createdAt = createdAtMatch;
+    }
+
+    const [orderAgg] = await Order.aggregate<{
+      _id: null;
+      totalGMV: number;
+      totalProcessingFees: number;
+      totalVatCollected: number;
+      totalPromoCosts: number;
+    }>([
+      { $match: orderMatch },
+      {
+        $group: {
+          _id: null,
+          totalGMV: { $sum: "$subtotal" },
+          totalProcessingFees: { $sum: "$serviceCharge" },
+          totalVatCollected: { $sum: { $ifNull: ["$taxAmount", 0] } },
+          totalPromoCosts: {
+            $sum: { $multiply: [{ $ifNull: ["$discountAmount", 0] }, 0.2] },
+          },
+        },
+      },
+    ]);
+
+    const [paymentAgg] = await Payment.aggregate<{
+      _id: null;
+      totalPaystackCosts: number;
+      totalCommissions: number;
+    }>([
+      { $match: { status: "succeeded", context: "order", ...(Object.keys(createdAtMatch).length > 0 ? { createdAt: createdAtMatch } : {}) } },
+      {
+        $group: {
+          _id: null,
+          totalPaystackCosts: { $sum: { $ifNull: ["$paystackFeeAmount", 0] } },
+          totalCommissions: { $sum: { $ifNull: ["$vendorPlatformFeeAmount", 0] } },
+        },
+      },
+    ]);
+
+    const refundMatch: Record<string, unknown> = { status: "approved" };
+    if (Object.keys(createdAtMatch).length > 0) {
+      refundMatch.decidedAt = createdAtMatch;
+    }
+    const [refundAgg] = await RefundRequest.aggregate<{
+      _id: null;
+      totalRefundsIssued: number;
+    }>([
+      { $match: refundMatch },
+      { $group: { _id: null, totalRefundsIssued: { $sum: "$amount" } } },
+    ]);
+
+    const totalGMV = orderAgg?.totalGMV ?? 0;
+    const totalProcessingFees = orderAgg?.totalProcessingFees ?? 0;
+    const totalVatCollected = orderAgg?.totalVatCollected ?? 0;
+    const totalPromoCosts = Math.round(orderAgg?.totalPromoCosts ?? 0);
+    const totalPaystackCosts = paymentAgg?.totalPaystackCosts ?? 0;
+    const totalCommissions = paymentAgg?.totalCommissions ?? 0;
+    const totalRefundsIssued = refundAgg?.totalRefundsIssued ?? 0;
+
+    const grossRevenue = totalCommissions + totalProcessingFees + totalVatCollected;
+    const totalCosts = totalPaystackCosts + totalRefundsIssued + totalPromoCosts;
+    const netProfit = grossRevenue - totalCosts;
+
+    return {
+      totalGMV,
+      totalProcessingFees,
+      totalVatCollected,
+      totalPaystackCosts,
+      totalCommissions,
+      totalRefundsIssued,
+      totalPromoCosts,
+      grossRevenue,
+      totalCosts,
+      netProfit,
     };
   };
 }

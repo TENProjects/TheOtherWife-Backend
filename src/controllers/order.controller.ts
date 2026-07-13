@@ -42,6 +42,22 @@ export class OrderController {
     },
   );
 
+  cancelUserOrder = handleAsyncControl(
+    async (req: Request<{ orderId: string }>, res: Response): Promise<Response> => {
+      const customerId = req.user?._id as unknown as string;
+      const order = await this.orderService.cancelOrderByCustomer(
+        customerId,
+        req.params.orderId,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Order cancelled successfully",
+        data: order,
+      } as ApiResponse);
+    },
+  );
+
   getVendorOrders = handleAsyncControl(
     async (req: Request, res: Response): Promise<Response> => {
       const userId = req.user?._id as unknown as string;

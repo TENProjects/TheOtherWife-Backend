@@ -10,6 +10,7 @@ import {
   updatePaymentGatewaySchema,
   updateSystemSettingsSchema,
   updateTaxSettingsSchema,
+  updateVatSettingsSchema,
 } from "../zod-schema/financials.schema.js";
 import {
   adminRateLimitMiddleware,
@@ -258,6 +259,160 @@ import {
 
 /**
  * @swagger
+ * /api/v1/admin/financials/orders/{orderId}/profit:
+ *   get:
+ *     summary: Per-order profit breakdown (admin) — Financial Spec section 7.1
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       "200":
+ *         description: Order profit breakdown fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: "#/components/schemas/ApiResponse"
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         mealSubtotal: { type: number }
+ *                         processingFee: { type: number }
+ *                         vat: { type: number }
+ *                         customerTotal: { type: number }
+ *                         paystackFee: { type: number }
+ *                         homeChefPayout: { type: number }
+ *                         towCommission: { type: number }
+ *                         refundAbsorbed: { type: number, description: Scenario B dispute refunds only }
+ *                         promoDiscountCost: { type: number }
+ *                         towNetProfit: { type: number }
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
+ * /api/v1/admin/financials/net-profit-summary:
+ *   get:
+ *     summary: Aggregated net-profit dashboard cards (admin) — Financial Spec section 7.2
+ *     description: Omit both from/to for an all-time summary.
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: to
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *     responses:
+ *       "200":
+ *         description: Net profit summary fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: "#/components/schemas/ApiResponse"
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         totalGMV: { type: number }
+ *                         totalProcessingFees: { type: number }
+ *                         totalVatCollected: { type: number }
+ *                         totalPaystackCosts: { type: number }
+ *                         totalCommissions: { type: number }
+ *                         totalRefundsIssued: { type: number }
+ *                         totalPromoCosts: { type: number }
+ *                         grossRevenue: { type: number }
+ *                         totalCosts: { type: number }
+ *                         netProfit: { type: number }
+ *       "400":
+ *         description: Bad request — from is after to
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+
+/**
+ * @swagger
+ * /api/v1/admin/financials/vat:
+ *   get:
+ *     summary: Get the VAT-on-processing-fee toggle state (admin)
+ *     description: >-
+ *       Per the Financial & Commission Specification v1.0 — VAT is 7.5% on
+ *       the processing fee only (never the meal subtotal), OFF by default.
+ *     tags: [Admin]
+ *     responses:
+ *       "200":
+ *         description: VAT settings fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: "#/components/schemas/ApiResponse"
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         vatEnabled: { type: boolean }
+ *                         vatRate: { type: number, example: 7.5 }
+ *                         vatToggledAt: { type: string, format: date-time, nullable: true }
+ *                         vatToggledBy: { type: string, nullable: true, description: Admin user ID }
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *   patch:
+ *     summary: Toggle VAT on the processing fee (admin)
+ *     description: >-
+ *       CRITICAL — do not enable until FIRS registration is confirmed.
+ *       Requires `confirm: true` as an explicit second confirmation. Only
+ *       affects new orders placed after the toggle changes; existing orders
+ *       are never recalculated retroactively.
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [enabled, confirm]
+ *             properties:
+ *               enabled: { type: boolean }
+ *               confirm:
+ *                 type: boolean
+ *                 enum: [true]
+ *                 description: Must be exactly `true` to acknowledge the FIRS-registration warning.
+ *     responses:
+ *       "200":
+ *         description: VAT settings updated successfully
+ *       "400":
+ *         description: Bad request — confirm was missing/false
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+
+/**
+ * @swagger
  * /api/v1/admin/financials/system-settings:
  *   get:
  *     summary: Get Super Admin System Control settings (admin)
@@ -333,6 +488,14 @@ class AdminFinancialsRouter {
   initializeRoutes() {
     this.router.get("/summary", this.financialsController.getSummary);
     this.router.get("/analytics", this.financialsController.getAnalytics);
+    this.router.get(
+      "/net-profit-summary",
+      this.financialsController.getNetProfitSummary,
+    );
+    this.router.get(
+      "/orders/:orderId/profit",
+      this.financialsController.getOrderProfitBreakdown,
+    );
 
     this.router.get(
       "/payment-gateways",
@@ -365,6 +528,14 @@ class AdminFinancialsRouter {
       adminSensitiveActionRateLimitMiddleware,
       zodValidation(updateTaxSettingsSchema),
       this.financialsController.updateTaxSettings,
+    );
+
+    this.router.get("/vat", this.financialsController.getVatSettings);
+    this.router.patch(
+      "/vat",
+      adminSensitiveActionRateLimitMiddleware,
+      zodValidation(updateVatSettingsSchema),
+      this.financialsController.updateVatSettings,
     );
 
     this.router.get(

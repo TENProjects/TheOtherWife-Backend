@@ -23,6 +23,17 @@ export interface VendorDocument extends Document {
   businessDescription: string;
   businessLogoUrl: string;
   approvalStatus: string;
+  // Paystack Split Payment (Financial & Commission Spec v1.0, section 3.2) —
+  // created automatically once the vendor has both been approved AND saved
+  // bank details. Vendors without one simply fall back to the manual
+  // VendorPayoutRequest flow rather than being blocked from checkout.
+  paystackSubaccountCode?: string;
+  // Set whenever automatic subaccount creation throws (e.g. unrecognized
+  // bank name); cleared on the next successful attempt. Lets admins see
+  // which vendors are stuck on manual payouts and why, without digging
+  // through server logs.
+  paystackSubaccountError?: string;
+  paystackSubaccountErrorAt?: Date;
   // Admin-tracked manual verification/inspection progress, separate from
   // approvalStatus — tracks whether an admin has reviewed the vendor's
   // submitted documents/business, independent of the approve/reject decision.
@@ -100,6 +111,18 @@ const VendorSchema = new Schema({
   },
   businessLogoUrl: {
     type: String,
+    required: false,
+  },
+  paystackSubaccountCode: {
+    type: String,
+    required: false,
+  },
+  paystackSubaccountError: {
+    type: String,
+    required: false,
+  },
+  paystackSubaccountErrorAt: {
+    type: Date,
     required: false,
   },
   approvalStatus: {

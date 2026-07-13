@@ -10,8 +10,15 @@ import Order from "../models/order.model.js";
 import Payment from "../models/payment.model.js";
 import RefundRequest from "../models/refundRequest.model.js";
 import { transaction } from "../util/transaction.util.js";
+import { WalletService } from "./wallet.service.js";
 
 export class RefundService {
+  private walletService: WalletService;
+
+  constructor() {
+    this.walletService = new WalletService();
+  }
+
   createRefundRequest = async (
     requesterId: string,
     requesterType: string,
@@ -114,12 +121,20 @@ export class RefundService {
     return { refundRequest };
   };
 
+  // Refund Scenario B (Financial & Commission Spec v1.0, section 4.2) — an
+  // admin-mediated dispute refund. Unlike Scenario A, this NEVER claws back
+  // the vendor (they cooked and delivered; they keep their payout) — TOW
+  // absorbs the full refund amount plus the already-lost Paystack fee out of
+  // its own revenue. Credits the customer's wallet directly; still does not
+  // call Paystack's refund API (no real money leaves the platform's Paystack
+  // balance — this is an internal ledger movement funded by TOW's margin).
   decideRefundRequest = transaction.use(
     async (
       session: ClientSession,
       adminUserId: string,
       refundRequestId: string,
       decision: "approve" | "reject",
+      approvedAmount?: number,
       adminNotes?: string,
     ) => {
       const refundRequest = await RefundRequest.findById(
@@ -142,28 +157,51 @@ export class RefundService {
         );
       }
 
-      refundRequest.status = decision === "approve" ? "approved" : "rejected";
-      refundRequest.adminNotes = adminNotes;
-      refundRequest.decidedBy = new mongoose.Types.ObjectId(adminUserId);
-      refundRequest.decidedAt = new Date();
-      await refundRequest.save({ session });
-
       if (decision === "approve") {
-        // Marks our own records as refunded only — this does NOT call
-        // Paystack's refund API, so no real money movement is triggered.
-        // Actual payout back to the customer still requires a manual
-        // Paystack dashboard refund (or a future API integration).
-        await Order.findByIdAndUpdate(
-          refundRequest.orderId,
-          { $set: { paymentStatus: "refunded" } },
-          { session },
-        );
+        const order = await Order.findById(refundRequest.orderId).session(session);
+        if (!order) {
+          throw new NotFoundException(
+            "Order not found",
+            HttpStatus.NOT_FOUND,
+            ErrorCode.RESOURCE_NOT_FOUND,
+          );
+        }
+
+        const finalAmount = approvedAmount ?? refundRequest.amount;
+        if (finalAmount <= 0 || finalAmount > order.totalAmount) {
+          throw new BadRequestException(
+            "Refund amount must be greater than 0 and cannot exceed the order total",
+            HttpStatus.BAD_REQUEST,
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        refundRequest.amount = finalAmount;
+
+        // Vendor payout/settlement is deliberately untouched — no clawback.
+        order.paymentStatus = "refunded";
+        await order.save({ session });
+
         await Payment.findOneAndUpdate(
           { orderId: refundRequest.orderId },
           { $set: { status: "refunded" } },
           { session },
         );
+
+        await this.walletService.creditWalletForRefund(
+          session,
+          refundRequest.customerId.toString(),
+          refundRequest.orderId.toString(),
+          finalAmount,
+          order.currency,
+        );
       }
+
+      refundRequest.status = decision === "approve" ? "approved" : "rejected";
+      refundRequest.adminNotes = adminNotes;
+      refundRequest.decidedBy = new mongoose.Types.ObjectId(adminUserId);
+      refundRequest.decidedAt = new Date();
+      await refundRequest.save({ session });
 
       return { refundRequest };
     },

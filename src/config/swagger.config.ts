@@ -922,6 +922,10 @@ const swaggerDefinition = {
             $ref: "#/components/schemas/CheckoutPaymentProvider",
             default: "paystack",
           },
+          promoCode: {
+            type: "string",
+            description: "Optional TOW promo code to apply and redeem (increments its usage count).",
+          },
         },
       },
       CheckoutConfirmResponse: {
@@ -931,15 +935,27 @@ const swaggerDefinition = {
             type: "object",
             description: "Created order record",
             properties: {
-              subtotal: { type: "number" },
+              subtotal: {
+                type: "number",
+                description: "Gross meal subtotal, before any promo code discount.",
+              },
               serviceCharge: {
                 type: "number",
                 description:
-                  "Calculated service charge applied during checkout.",
+                  "Tiered processing fee (4.9% below N15,000 discounted-subtotal, 2.9% at/above).",
               },
-              deliveryFee: { type: "number" },
-              taxAmount: { type: "number" },
-              discountAmount: { type: "number" },
+              deliveryFee: {
+                type: "number",
+                description: "Always 0 — TheOtherWife does not charge a delivery fee; vendors handle delivery directly.",
+              },
+              taxAmount: {
+                type: "number",
+                description: "VAT (7.5% on the processing fee only) — 0 unless the admin has enabled VAT.",
+              },
+              discountAmount: {
+                type: "number",
+                description: "Promo code discount applied to the subtotal, if any.",
+              },
               totalAmount: { type: "number" },
               walletAmountApplied: {
                 type: "number",

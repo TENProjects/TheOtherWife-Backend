@@ -28,6 +28,13 @@ type InitializePaystackInput = {
   reference: string;
   orderId: string;
   paymentId: string;
+  // Paystack Split Payment (spec section 3.2) — when the vendor has a
+  // subaccount, this NGN amount (converted to kobo) is what the MAIN/platform
+  // account retains; the remainder goes straight to the vendor's subaccount.
+  // Omitted entirely for meal-plan payments and vendors without a subaccount
+  // yet, in which case the full amount goes to the platform as before.
+  subaccountCode?: string;
+  mainAccountShare?: number;
 };
 
 type PaystackInitializeResponse = {
@@ -75,6 +82,20 @@ export class PaymentService {
             orderId: payload.orderId,
             paymentId: payload.paymentId,
           },
+          ...(payload.subaccountCode
+            ? {
+                subaccount: payload.subaccountCode,
+                // Overrides the subaccount's default percentage split for
+                // this specific transaction — an absolute amount is the only
+                // way to correctly reserve exactly (serviceCharge + VAT +
+                // 20% of subtotal - Paystack fee) for the platform while the
+                // vendor's subaccount receives exactly 80% of subtotal,
+                // since Paystack's split otherwise applies one flat
+                // percentage to the WHOLE transaction amount.
+                transaction_charge: Math.round((payload.mainAccountShare ?? 0) * 100),
+                bearer: "account",
+              }
+            : {}),
         }),
       },
     );
@@ -316,10 +337,21 @@ export class PaymentService {
           { session },
         );
 
-        await this.vendorWalletService.syncPaymentSettlementFromOrder(
+        const syncedPayment = await this.vendorWalletService.syncPaymentSettlementFromOrder(
           session,
           paymentRecord._id.toString(),
         );
+
+        // Section 3.2 — when this charge was split, Paystack already
+        // deposited the vendor's 80% cut directly to their bank account at
+        // charge time. Mark it settled immediately so it never shows up as
+        // "available to withdraw" (which would let the vendor request a
+        // manual payout for money they've already received).
+        if (paymentRecord.splitPayment) {
+          syncedPayment.vendorSettledAmount = syncedPayment.vendorNetAmount;
+          syncedPayment.settlementStatus = "paid";
+          await syncedPayment.save({ session });
+        }
 
         return { handled: true, payment: paymentRecord, order };
       },

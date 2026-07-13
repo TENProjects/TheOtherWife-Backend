@@ -10,6 +10,7 @@ export const checkoutPaymentProviderSchema = z.enum([
 
 export const checkoutPreviewSchema = z.object({
   addressId: z.string().trim().min(1),
+  promoCode: z.string().trim().min(1).optional(),
 });
 
 export const checkoutConfirmSchema = z.object({
@@ -17,4 +18,5 @@ export const checkoutConfirmSchema = z.object({
   cartUpdatedAt: z.string().datetime(),
   useWallet: z.boolean().optional().default(false),
   paymentProvider: checkoutPaymentProviderSchema.optional().default("paystack"),
+  promoCode: z.string().trim().min(1).optional(),
 });

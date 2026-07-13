@@ -10,8 +10,10 @@ import Payment from "../models/payment.model.js";
 import Vendor from "../models/vendor.model.js";
 import VendorPayoutAllocation from "../models/vendorPayoutAllocation.model.js";
 import VendorPayoutRequest from "../models/vendorPayoutRequest.model.js";
+import VendorClawback from "../models/vendorClawback.model.js";
 import FinancialSettings from "../models/financialSettings.model.js";
 import { transaction } from "../util/transaction.util.js";
+import { PaystackSubaccountService } from "./paystack-subaccount.service.js";
 
 type MarkPaidAllocationInput = {
   paymentId: string;
@@ -20,6 +22,12 @@ type MarkPaidAllocationInput = {
 type AdminPayoutStatus = "requested" | "processing" | "approved" | "rejected";
 
 export class VendorWalletService {
+  private paystackSubaccountService: PaystackSubaccountService;
+
+  constructor() {
+    this.paystackSubaccountService = new PaystackSubaccountService();
+  }
+
   private getVendorByUserId = async (userId: string, session?: ClientSession) => {
     const query = Vendor.findOne({ userId });
     if (session) {
@@ -73,9 +81,19 @@ export class VendorWalletService {
       );
     }
 
-    const vendorGrossAmount = Math.max(order.totalAmount, 0);
-    const vendorPlatformFeeAmount = Math.max(order.serviceCharge, 0);
-    const vendorNetAmount = Math.max(vendorGrossAmount - vendorPlatformFeeAmount, 0);
+    // Fixed 80/20 split of the (promo-discounted) meal subtotal only (Financial
+    // & Commission Spec v1.0, section 3.2) — never a share of totalAmount,
+    // which also includes the processing fee/VAT that are 100% TOW revenue.
+    const effectiveSubtotal = Math.max(
+      order.subtotal - (order.discountAmount ?? 0),
+      0,
+    );
+    const vendorNetAmount = Math.max(
+      Math.round(effectiveSubtotal * 0.8),
+      0,
+    );
+    const vendorGrossAmount = effectiveSubtotal;
+    const vendorPlatformFeeAmount = effectiveSubtotal - vendorNetAmount;
 
     payment.vendorId = order.vendorId;
     payment.vendorGrossAmount = vendorGrossAmount;
@@ -102,6 +120,60 @@ export class VendorWalletService {
     return payment;
   };
 
+  // Refund Scenario A (Financial & Commission Spec v1.0, section 4.1) — the
+  // vendor's 80% cut of this specific order is fully clawed back the moment
+  // a HomeChef rejects the order (or it's cancelled pre-preparation), no
+  // admin action required. If the payment was already settled/paid out to
+  // the vendor, the clawback can't reduce a balance that's already left the
+  // platform on THIS payment — it's logged "pending" and recovered from the
+  // vendor's other/future available balance (see getVendorWalletSummary's
+  // unfloored per-row netting) or their next payout allocation.
+  applyVendorClawback = async (
+    session: ClientSession,
+    paymentId: string,
+    reason: string,
+  ) => {
+    const payment = await Payment.findById(paymentId).session(session);
+    if (!payment) {
+      throw new NotFoundException(
+        "Payment not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    const clawbackAmount = Math.max(
+      payment.vendorNetAmount - payment.vendorClawbackAmount,
+      0,
+    );
+
+    if (clawbackAmount <= 0) {
+      return { clawbackAmount: 0 };
+    }
+
+    const alreadySettled = payment.vendorSettledAmount > 0;
+
+    payment.vendorClawbackAmount += clawbackAmount;
+    await payment.save({ session });
+
+    await VendorClawback.create(
+      [
+        {
+          vendorId: payment.vendorId,
+          orderId: payment.orderId,
+          paymentId: payment._id,
+          amount: clawbackAmount,
+          appliedAmount: alreadySettled ? 0 : clawbackAmount,
+          status: alreadySettled ? "pending" : "applied",
+          reason,
+        },
+      ],
+      { session },
+    );
+
+    return { clawbackAmount, alreadySettled };
+  };
+
   getVendorWalletSummary = async (vendorUserId: string) => {
     const vendor = await this.getVendorByUserId(vendorUserId);
 
@@ -110,7 +182,8 @@ export class VendorWalletService {
       currency: string;
       totalNet: number;
       totalSettled: number;
-      pending: number;
+      totalClawback: number;
+      pendingRaw: number;
       orderCount: number;
     }>([
       {
@@ -125,9 +198,18 @@ export class VendorWalletService {
           currency: { $first: "$currency" },
           totalNet: { $sum: "$vendorNetAmount" },
           totalSettled: { $sum: "$vendorSettledAmount" },
-          pending: {
+          totalClawback: { $sum: { $ifNull: ["$vendorClawbackAmount", 0] } },
+          // Signed (not floored per-row) so a clawback against an
+          // already-fully-settled payment can still net out against
+          // available balance from the vendor's OTHER payments — matching
+          // the spec's "deduct from next payout automatically" behavior.
+          // The grand total is floored at 0 below, once summed.
+          pendingRaw: {
             $sum: {
-              $max: [{ $subtract: ["$vendorNetAmount", "$vendorSettledAmount"] }, 0],
+              $subtract: [
+                "$vendorNetAmount",
+                { $add: ["$vendorSettledAmount", { $ifNull: ["$vendorClawbackAmount", 0] }] },
+              ],
             },
           },
           orderCount: { $sum: 1 },
@@ -140,7 +222,8 @@ export class VendorWalletService {
         currency: summary?.currency ?? "NGN",
         lifetimeEarnings: summary?.totalNet ?? 0,
         totalPaidOut: summary?.totalSettled ?? 0,
-        availableToPayout: summary?.pending ?? 0,
+        totalClawback: summary?.totalClawback ?? 0,
+        availableToPayout: Math.max(summary?.pendingRaw ?? 0, 0),
         paidOrdersCount: summary?.orderCount ?? 0,
       },
     };
@@ -259,7 +342,10 @@ export class VendorWalletService {
 
   getVendorPayoutSettings = async (vendorUserId: string) => {
     const vendor = await this.getVendorByUserId(vendorUserId);
-    return { payoutSettings: vendor.payoutSettings };
+    return {
+      payoutSettings: vendor.payoutSettings,
+      paystackSubaccountCode: vendor.paystackSubaccountCode,
+    };
   };
 
   updateVendorPayoutSettings = async (
@@ -299,7 +385,42 @@ export class VendorWalletService {
 
     await vendor.save();
 
-    return { payoutSettings: vendor.payoutSettings };
+    // Paystack Split Payment (spec section 3.2) — bank details are usually
+    // saved after approval (not during onboarding review), so this is the
+    // main real-world trigger point for subaccount creation. Never blocks
+    // the settings save itself if Paystack is unreachable/misconfigured.
+    if (
+      !vendor.paystackSubaccountCode &&
+      vendor.approvalStatus === "approved" &&
+      vendor.payoutSettings.bankDetails?.bankName &&
+      vendor.payoutSettings.bankDetails?.accountNumber
+    ) {
+      try {
+        const { subaccountCode } = await this.paystackSubaccountService.createSubaccount({
+          businessName: vendor.businessName || "TheOtherWife Vendor",
+          bankName: vendor.payoutSettings.bankDetails.bankName,
+          accountNumber: vendor.payoutSettings.bankDetails.accountNumber,
+        });
+        vendor.paystackSubaccountCode = subaccountCode;
+        vendor.paystackSubaccountError = undefined;
+        vendor.paystackSubaccountErrorAt = undefined;
+        await vendor.save();
+      } catch (error) {
+        console.error(
+          `Failed to create Paystack subaccount for vendor ${vendor._id.toString()}:`,
+          error,
+        );
+        vendor.paystackSubaccountError =
+          error instanceof Error ? error.message : "Unknown error creating Paystack subaccount";
+        vendor.paystackSubaccountErrorAt = new Date();
+        await vendor.save();
+      }
+    }
+
+    return {
+      payoutSettings: vendor.payoutSettings,
+      paystackSubaccountCode: vendor.paystackSubaccountCode,
+    };
   };
 
   getVendorPayoutRequests = async (vendorUserId: string) => {

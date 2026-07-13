@@ -40,6 +40,7 @@ import { blogRouter } from "./src/routes/blog.route.js";
 import { adminVendorRelationsRouter } from "./src/routes/admin-vendor-relations.route.js";
 import { favouriteRouter } from "./src/routes/favourite.route.js";
 import { mealPlanRouter } from "./src/routes/meal-plan.route.js";
+import { adminPromoCodeRouter } from "./src/routes/admin-promo-code.route.js";
 import "./src/signals/push-notification.signal.js";
 
 export class App {
@@ -142,6 +143,7 @@ export class App {
     this.app.use("/api/v1/analytics", analyticsRouter);
     this.app.use("/api/v1/favourites", favouriteRouter);
     this.app.use("/api/v1/meal-plans", mealPlanRouter);
+    this.app.use("/api/v1/admin/promo-codes", adminPromoCodeRouter);
 
     this.app.get("/api-docs", async (_req, res) => {
       try {

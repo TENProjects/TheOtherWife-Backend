@@ -15,13 +15,14 @@ export class CheckoutController {
 
   previewCheckout = handleAsyncControl(
     async (
-      req: Request<{}, {}, { addressId: string }>,
+      req: Request<{}, {}, { addressId: string; promoCode?: string }>,
       res: Response,
     ): Promise<Response> => {
       const customerId = req.user?._id as unknown as string;
       const preview = await this.checkoutService.previewCheckout(
         customerId,
         req.body.addressId,
+        req.body.promoCode,
       );
 
       return res.status(HttpStatus.OK).json({
@@ -42,6 +43,7 @@ export class CheckoutController {
           cartUpdatedAt: string;
           useWallet?: boolean;
           paymentProvider?: "paystack" | "cash" | "wallet";
+          promoCode?: string;
         }
       >,
       res: Response,
@@ -53,6 +55,7 @@ export class CheckoutController {
         req.body.cartUpdatedAt,
         req.body.useWallet,
         req.body.paymentProvider,
+        req.body.promoCode,
       );
 
       return res.status(HttpStatus.CREATED).json({

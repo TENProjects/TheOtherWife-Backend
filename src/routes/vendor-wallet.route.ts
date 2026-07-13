@@ -54,6 +54,11 @@ import { updateVendorPayoutSettingsSchema } from "../zod-schema/vendor.schema.js
  * /api/v1/vendor-wallet/settings:
  *   get:
  *     summary: Get current vendor's payout settings
+ *     description: >-
+ *       Response includes `paystackSubaccountCode` — present once Paystack
+ *       Split Payment (Financial & Commission Spec v1.0, section 3.2) is live
+ *       for this vendor; undefined means new orders still settle via the
+ *       manual VendorPayoutRequest flow.
  *     tags: [Vendor Wallet]
  *     responses:
  *       "200":
@@ -64,6 +69,15 @@ import { updateVendorPayoutSettingsSchema } from "../zod-schema/vendor.schema.js
  *         description: Forbidden
  *   patch:
  *     summary: Update current vendor's payout settings
+ *     description: >-
+ *       Saving complete bank details (bankName + accountNumber) for an
+ *       approved vendor automatically creates their Paystack subaccount in
+ *       the background (Financial & Commission Spec v1.0, section 3.2) —
+ *       once created, new orders split 80% to this vendor instantly at
+ *       checkout instead of requiring a manual payout request. Subaccount
+ *       creation failures (e.g. unrecognized bank name) never block this
+ *       settings save itself; check GET /vendor-wallet/settings afterward if
+ *       automatic split payouts don't start appearing.
  *     tags: [Vendor Wallet]
  *     requestBody:
  *       required: true

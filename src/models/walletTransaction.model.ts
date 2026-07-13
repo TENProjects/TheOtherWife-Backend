@@ -6,7 +6,12 @@ export interface WalletTransactionDocument extends Document {
   walletId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   walletType: "promo";
-  transactionType: "promo_earn" | "promo_spend" | "promo_reverse" | "promo_expire";
+  transactionType:
+    | "promo_earn"
+    | "promo_spend"
+    | "promo_reverse"
+    | "promo_expire"
+    | "refund_credit";
   amount: number;
   currency: string;
   status: "pending" | "posted" | "reversed";
@@ -38,7 +43,7 @@ const WalletTransactionSchema = new Schema(
     },
     transactionType: {
       type: String,
-      enum: ["promo_earn", "promo_spend", "promo_reverse", "promo_expire"],
+      enum: ["promo_earn", "promo_spend", "promo_reverse", "promo_expire", "refund_credit"],
       required: true,
       index: true,
     },

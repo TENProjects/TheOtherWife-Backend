@@ -34,6 +34,50 @@ export class AdminVendorRelationsController {
     },
   );
 
+  // ---- Paystack Split Payment subaccount health ----
+
+  getPaystackSubaccountIssues = handleAsyncControl(
+    async (_req: Request, res: Response): Promise<Response> => {
+      const result = await this.service.getPaystackSubaccountIssues();
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Vendors with unresolved Paystack subaccount issues fetched successfully",
+        data: result,
+      } as ApiResponse);
+    },
+  );
+
+  retryPaystackSubaccount = handleAsyncControl(
+    async (req: Request<{ vendorId: string }>, res: Response): Promise<Response> => {
+      const adminUserId = req.user?._id as unknown as string;
+      const result = await this.service.retryPaystackSubaccount(
+        adminUserId,
+        req.params.vendorId,
+      );
+
+      logAdminAction({
+        adminUserId,
+        action: "vendor_relations.paystack_subaccount_retry",
+        targetType: "Vendor",
+        targetId: req.params.vendorId,
+        metadata: {
+          description: `Retried Paystack subaccount creation for ${result.vendorName}`,
+          succeeded: !!result.paystackSubaccountCode,
+        },
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: result.paystackSubaccountCode
+          ? "Paystack subaccount created successfully"
+          : "Paystack subaccount creation still failing — see error field",
+        data: result,
+      } as ApiResponse);
+    },
+  );
+
   // ---- Vendor onboarding ----
 
   getVendorApplications = handleAsyncControl(

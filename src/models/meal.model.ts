@@ -15,6 +15,11 @@ export interface MealDocument extends Document {
   categoryName: string;
   description: string;
   price: number;
+  // Vendor-set discount (Financial & Commission Spec v1.0, section 5.2) —
+  // when set and greater than `price`, this meal is "on discount" and a TOW
+  // promo code cannot be stacked on top of it. `price` is always the actual
+  // amount charged; `originalPrice` is display-only (strikethrough "was X").
+  originalPrice?: number;
   imageUrl: string;
   isAvailable: boolean;
   publicationStatus: "draft" | "published";
@@ -79,6 +84,11 @@ const MealSchema = new Schema({
   price: {
     type: Number,
     required: true,
+  },
+  originalPrice: {
+    type: Number,
+    required: false,
+    min: 0,
   },
   isAvailable: {
     type: Boolean,

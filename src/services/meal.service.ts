@@ -162,6 +162,7 @@ export class MealService {
         name: string;
         description: string;
         price: number;
+        originalPrice?: number;
         categoryName: string;
         primaryImageUrl: string;
         tags: string[];
@@ -181,6 +182,7 @@ export class MealService {
         name,
         description,
         price,
+        originalPrice,
         categoryName,
         primaryImageUrl,
         tags,
@@ -228,6 +230,7 @@ export class MealService {
             categoryId,
             description,
             price,
+            originalPrice,
             primaryImageUrl,
             tags,
             // A new dish has nothing to hide it from customers by default — the
@@ -269,6 +272,7 @@ export class MealService {
         name?: string;
         description?: string;
         price?: number;
+        originalPrice?: number;
         categoryName?: string;
         primaryImageUrl?: string;
         additionalImages?: string[];
@@ -340,6 +344,9 @@ export class MealService {
       if (mealData.description !== undefined)
         meal.description = mealData.description;
       if (mealData.price !== undefined) meal.price = mealData.price;
+      if (mealData.originalPrice !== undefined) {
+        meal.originalPrice = mealData.originalPrice === 0 ? undefined : mealData.originalPrice;
+      }
       if (mealData.primaryImageUrl !== undefined)
         meal.primaryImageUrl = mealData.primaryImageUrl;
       if (mealData.additionalImages !== undefined)
@@ -598,6 +605,7 @@ export class MealService {
         categoryName: meal.categoryName,
         description: meal.description,
         price: meal.price,
+        originalPrice: meal.originalPrice,
         publicationStatus: meal.publicationStatus,
         isAvailable: meal.isAvailable,
         primaryImageUrl: meal.primaryImageUrl,

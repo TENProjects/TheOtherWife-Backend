@@ -15,6 +15,15 @@ import {
  * /api/v1/checkout/preview:
  *   post:
  *     summary: Generate a checkout preview for the active cart
+ *     description: >-
+ *       Pricing per the Financial & Commission Specification v1.0: processing
+ *       fee is 4.9% below N15,000 subtotal, 2.9% at/above (calculated on the
+ *       promo-discounted subtotal if a promoCode is applied); VAT is 7.5% on
+ *       the processing fee only, and only when the admin has toggled VAT on;
+ *       there is no delivery fee. Rejects with 400 if the meal subtotal
+ *       (before any discount) is below the N2,000 minimum, or if promoCode
+ *       cannot be applied (invalid/expired/exhausted/below its own minimum,
+ *       or the cart already contains a vendor-discounted item).
  *     tags: [Checkout]
  *     requestBody:
  *       required: true
@@ -26,6 +35,9 @@ import {
  *             properties:
  *               addressId:
  *                 type: string
+ *               promoCode:
+ *                 type: string
+ *                 description: Optional TOW promo code to apply (see /admin/promo-codes)
  *     responses:
  *       "200":
  *         description: Checkout preview generated successfully
@@ -34,7 +46,9 @@ import {
  *             schema:
  *               $ref: "#/components/schemas/ApiResponse"
  *       "400":
- *         description: Validation error
+ *         description: >-
+ *           Validation error — includes below-minimum-order-value and
+ *           invalid/inapplicable promo code cases
  *       "401":
  *         description: Unauthorized
  *       "403":
@@ -48,6 +62,10 @@ import {
  * /api/v1/checkout/confirm:
  *   post:
  *     summary: Create a pending order and initialize payment
+ *     description: >-
+ *       If promoCode is supplied, it is re-validated and its usage count is
+ *       atomically incremented here (unlike /preview, which only validates —
+ *       previewing never consumes a redemption).
  *     tags: [Checkout]
  *     requestBody:
  *       required: true

@@ -81,6 +81,13 @@ import {
  * /api/v1/orders/vendor/{orderId}/reject:
  *   patch:
  *     summary: Reject a paid order
+ *     description: >-
+ *       Refund Scenario A (Financial & Commission Spec v1.0, section 4.1) —
+ *       automatic and immediate, no admin action required. Credits the full
+ *       Customer Total to the customer's wallet and claws back the vendor's
+ *       80% cut of this order (recorded immediately if unsettled, or logged
+ *       as a pending clawback against their next payout if already paid out).
+ *       TOW's only net loss is the non-refundable Paystack fee.
  *     tags: [Order]
  *     parameters:
  *       - in: path
@@ -90,9 +97,39 @@ import {
  *           type: string
  *     responses:
  *       "200":
- *         description: Order rejected successfully
+ *         description: Order rejected and refunded successfully
  *       "400":
  *         description: Bad request
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
+ * /api/v1/orders/{orderId}/cancel:
+ *   patch:
+ *     summary: Cancel an order before the vendor starts preparing it (customer)
+ *     description: >-
+ *       Refund Scenario A's other trigger (section 4.1) — only valid while
+ *       the order is "paid" or "confirmed" (not yet "preparing"). Same
+ *       automatic full wallet refund + vendor clawback as vendor rejection.
+ *       Once preparation has started, use a dispute (Scenario B) instead.
+ *     tags: [Order]
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       "200":
+ *         description: Order cancelled and refunded successfully
+ *       "400":
+ *         description: Bad request — order has already moved past "confirmed"
  *       "401":
  *         description: Unauthorized
  *       "403":
@@ -496,6 +533,12 @@ class OrderRouter {
       authMiddleware,
       roleGuardMiddleware(["customer"]),
       this.orderController.getUserOrderById,
+    );
+    this.router.patch(
+      "/:orderId/cancel",
+      authMiddleware,
+      roleGuardMiddleware(["customer"]),
+      this.orderController.cancelUserOrder,
     );
   }
 }

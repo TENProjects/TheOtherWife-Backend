@@ -67,17 +67,22 @@ export class RefundController {
       req: Request<
         { id: string },
         {},
-        { decision: "approve" | "reject"; adminNotes?: string }
+        {
+          decision: "approve" | "reject";
+          approvedAmount?: number;
+          adminNotes?: string;
+        }
       >,
       res: Response,
     ): Promise<Response> => {
       const adminUserId = req.user?._id as unknown as string;
-      const { decision, adminNotes } = req.body;
+      const { decision, approvedAmount, adminNotes } = req.body;
 
       const result = await this.refundService.decideRefundRequest(
         adminUserId,
         req.params.id,
         decision,
+        approvedAmount,
         adminNotes,
       );
 

@@ -171,6 +171,73 @@ export class FinancialsController {
     },
   );
 
+  getVatSettings = handleAsyncControl(
+    async (_req: Request, res: Response): Promise<Response> => {
+      const vatSettings = await this.financialsService.getVatSettings();
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "VAT settings fetched successfully",
+        data: vatSettings,
+      } as ApiResponse);
+    },
+  );
+
+  updateVatSettings = handleAsyncControl(
+    async (
+      req: Request<{}, {}, { enabled: boolean; confirm: true }>,
+      res: Response,
+    ): Promise<Response> => {
+      const adminUserId = req.user?._id as unknown as string;
+
+      const vatSettings = await this.financialsService.updateVatSettings(
+        { enabled: req.body.enabled },
+        adminUserId,
+      );
+
+      logAdminAction({
+        adminUserId,
+        action: "financials.vat_toggle",
+        targetType: "FinancialSettings",
+        metadata: { enabled: req.body.enabled },
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "VAT settings updated successfully",
+        data: vatSettings,
+      } as ApiResponse);
+    },
+  );
+
+  getOrderProfitBreakdown = handleAsyncControl(
+    async (req: Request<{ orderId: string }>, res: Response): Promise<Response> => {
+      const breakdown = await this.financialsService.getOrderProfitBreakdown(
+        req.params.orderId,
+      );
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Order profit breakdown fetched successfully",
+        data: breakdown,
+      } as ApiResponse);
+    },
+  );
+
+  getNetProfitSummary = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const from = req.query.from ? new Date(String(req.query.from)) : undefined;
+      const to = req.query.to ? new Date(String(req.query.to)) : undefined;
+
+      const summary = await this.financialsService.getNetProfitSummary({ from, to });
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Net profit summary fetched successfully",
+        data: summary,
+      } as ApiResponse);
+    },
+  );
+
   getSystemSettings = handleAsyncControl(
     async (_req: Request, res: Response): Promise<Response> => {
       const settings = await this.financialsService.getSystemSettings();

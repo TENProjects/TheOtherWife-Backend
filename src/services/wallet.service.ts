@@ -143,6 +143,40 @@ export class WalletService {
     return { finalized: true, amount: reservation.amount };
   };
 
+  // Refund destination is always the customer's in-app wallet, never back to
+  // the card (Financial & Commission Spec v1.0, section 4/6.1). Used by both
+  // refund Scenario A (automatic clawback) and Scenario B (admin dispute).
+  creditWalletForRefund = async (
+    session: ClientSession,
+    userId: string,
+    orderId: string,
+    amount: number,
+    currency: string,
+  ) => {
+    const wallet = await this.ensureWallet(userId, currency, session);
+    wallet.availableBalance += amount;
+    await wallet.save({ session });
+
+    await WalletTransaction.create(
+      [
+        {
+          walletId: wallet._id,
+          userId,
+          walletType: wallet.walletType,
+          transactionType: "refund_credit",
+          amount,
+          currency: wallet.currency,
+          status: "posted",
+          referenceType: "order",
+          referenceId: orderId,
+        },
+      ],
+      { session },
+    );
+
+    return { creditedAmount: amount, newBalance: wallet.availableBalance };
+  };
+
   releaseReservedWalletForOrder = async (
     session: ClientSession,
     userId: string,

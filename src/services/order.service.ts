@@ -1,7 +1,9 @@
 /** @format */
 
+import { ClientSession } from "mongoose";
 import Order from "../models/order.model.js";
 import Meal from "../models/meal.model.js";
+import Payment from "../models/payment.model.js";
 import RefundRequest from "../models/refundRequest.model.js";
 import FinancialSettings from "../models/financialSettings.model.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
@@ -10,8 +12,58 @@ import { ErrorCode } from "../enums/error-code.enum.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import Vendor from "../models/vendor.model.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
+import { transaction } from "../util/transaction.util.js";
+import { WalletService } from "./wallet.service.js";
+import { VendorWalletService } from "./vendor-wallet.service.js";
 
 export class OrderService {
+  private walletService: WalletService;
+  private vendorWalletService: VendorWalletService;
+
+  constructor() {
+    this.walletService = new WalletService();
+    this.vendorWalletService = new VendorWalletService();
+  }
+
+  // Refund Scenario A (Financial & Commission Spec v1.0, section 4.1) —
+  // automatic: full customer refund to wallet + full vendor clawback of their
+  // 80% cut of this order, no admin action required. Paystack's fee is the
+  // only thing TOW actually loses (it's already baked out of what gets
+  // refunded/clawed back, since neither side is charged for it).
+  private applyAutomaticRefund = async (
+    session: ClientSession,
+    orderId: string,
+    customerId: string,
+    orderTotalAmount: number,
+    currency: string,
+    reason: string,
+  ) => {
+    const payment = await Payment.findOne({ orderId }).session(session);
+    if (!payment) {
+      return;
+    }
+
+    // Full Customer Total (subtotal + processing fee + VAT), regardless of
+    // how much of it was originally paid from wallet vs. Paystack — refunds
+    // always land back in the wallet in full (section 4/6.1).
+    await this.walletService.creditWalletForRefund(
+      session,
+      customerId,
+      orderId,
+      orderTotalAmount,
+      currency,
+    );
+
+    await this.vendorWalletService.applyVendorClawback(
+      session,
+      payment._id.toString(),
+      reason,
+    );
+
+    payment.status = "refunded";
+    await payment.save({ session });
+  };
+
   private getVendorByUserId = async (userId: string) => {
     const vendor = await Vendor.findOne({ userId });
 
@@ -170,12 +222,12 @@ export class OrderService {
   rejectVendorOrder = async (userId: string, orderId: string) => {
     const vendor = await this.getVendorByUserId(userId);
 
-    const order = await Order.findOne({
+    const existingOrder = await Order.findOne({
       _id: orderId,
       vendorId: vendor._id,
     });
 
-    if (!order) {
+    if (!existingOrder) {
       throw new NotFoundException(
         "Order not found",
         HttpStatus.NOT_FOUND,
@@ -183,7 +235,7 @@ export class OrderService {
       );
     }
 
-    if (order.status !== "paid") {
+    if (existingOrder.status !== "paid") {
       throw new BadRequestException(
         "Only paid orders can be rejected",
         HttpStatus.BAD_REQUEST,
@@ -191,8 +243,33 @@ export class OrderService {
       );
     }
 
-    order.status = "vendor_rejected";
-    await order.save();
+    const order = await transaction.use(
+      async (session: ClientSession, currentOrderId: string) => {
+        const orderRecord = await Order.findById(currentOrderId).session(session);
+        if (!orderRecord) {
+          throw new NotFoundException(
+            "Order not found",
+            HttpStatus.NOT_FOUND,
+            ErrorCode.RESOURCE_NOT_FOUND,
+          );
+        }
+
+        orderRecord.status = "vendor_rejected";
+        orderRecord.paymentStatus = "refunded";
+        await orderRecord.save({ session });
+
+        await this.applyAutomaticRefund(
+          session,
+          orderRecord._id.toString(),
+          orderRecord.customerId.toString(),
+          orderRecord.totalAmount,
+          orderRecord.currency,
+          "Vendor rejected order",
+        );
+
+        return orderRecord;
+      },
+    )(orderId);
 
     await appSignalDispatcher.emit("order.status_changed", {
       orderId: order._id.toString(),
@@ -200,6 +277,73 @@ export class OrderService {
       vendorId: order.vendorId.toString(),
       previousStatus: "paid",
       currentStatus: "vendor_rejected",
+    });
+
+    return { order };
+  };
+
+  // Refund Scenario A's other trigger — customer cancels before the vendor
+  // has started preparation. "confirmed" is the last status where nothing
+  // has been cooked yet; once "preparing", cancellation must go through the
+  // admin-mediated RefundRequest flow (Scenario B) instead.
+  cancelOrderByCustomer = async (customerId: string, orderId: string) => {
+    const existingOrder = await Order.findOne({
+      _id: orderId,
+      customerId,
+    });
+
+    if (!existingOrder) {
+      throw new NotFoundException(
+        "Order not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    if (!["paid", "confirmed"].includes(existingOrder.status)) {
+      throw new BadRequestException(
+        "This order can no longer be cancelled — the vendor has already started preparing it",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const previousStatus = existingOrder.status;
+
+    const order = await transaction.use(
+      async (session: ClientSession, currentOrderId: string) => {
+        const orderRecord = await Order.findById(currentOrderId).session(session);
+        if (!orderRecord) {
+          throw new NotFoundException(
+            "Order not found",
+            HttpStatus.NOT_FOUND,
+            ErrorCode.RESOURCE_NOT_FOUND,
+          );
+        }
+
+        orderRecord.status = "customer_cancelled";
+        orderRecord.paymentStatus = "refunded";
+        await orderRecord.save({ session });
+
+        await this.applyAutomaticRefund(
+          session,
+          orderRecord._id.toString(),
+          orderRecord.customerId.toString(),
+          orderRecord.totalAmount,
+          orderRecord.currency,
+          "Customer cancelled order before preparation",
+        );
+
+        return orderRecord;
+      },
+    )(orderId);
+
+    await appSignalDispatcher.emit("order.status_changed", {
+      orderId: order._id.toString(),
+      customerUserId: order.customerId.toString(),
+      vendorId: order.vendorId.toString(),
+      previousStatus,
+      currentStatus: "customer_cancelled",
     });
 
     return { order };

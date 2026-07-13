@@ -9,6 +9,7 @@ import Vendor from "../models/vendor.model.js";
 import User from "../models/user.model.js";
 import Order from "../models/order.model.js";
 import Payment from "../models/payment.model.js";
+import FinancialSettings from "../models/financialSettings.model.js";
 import type { OrderDocument } from "../models/order.model.js";
 import type { PaymentDocument } from "../models/payment.model.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
@@ -17,6 +18,7 @@ import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { transaction } from "../util/transaction.util.js";
 import { PaymentService } from "./payment.service.js";
+import { PromoCodeService } from "./promo-code.service.js";
 import { isVendorReceivingOrders } from "../util/vendor-opening-hours.util.js";
 import { WalletService } from "./wallet.service.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
@@ -26,6 +28,22 @@ import {
 } from "../util/meal-customization.util.js";
 
 type CheckoutPaymentProvider = "paystack" | "cash" | "wallet";
+
+// Financial & Commission Specification v1.0 (May 2026) — fixed, non-admin-
+// configurable rates. See section 8 "Quick Reference".
+const MINIMUM_ORDER_VALUE = 2000;
+const VAT_RATE_ON_PROCESSING_FEE = 0.075;
+const VENDOR_PAYOUT_RATE = 0.8;
+const PAYSTACK_FEE_RATE = 0.015;
+const PAYSTACK_FEE_FLAT = 100;
+const PAYSTACK_FEE_CAP = 2000;
+
+// Section 3.1 — Paystack fee is (Customer Total x 1.5%) + N100, capped at N2000.
+export const calculatePaystackFee = (customerTotal: number): number =>
+  Math.min(
+    Math.round(customerTotal * PAYSTACK_FEE_RATE + PAYSTACK_FEE_FLAT),
+    PAYSTACK_FEE_CAP,
+  );
 
 type CheckoutItem = {
   mealId: string;
@@ -41,6 +59,8 @@ type CheckoutPricing = {
   subtotal: number;
   serviceCharge: number;
   deliveryFee: number;
+  // VAT on the processing fee only (7.5%, only when admin has toggled it on)
+  // — stored in the pre-existing `taxAmount` field/name.
   taxAmount: number;
   discountAmount: number;
   totalAmount: number;
@@ -70,11 +90,13 @@ type CheckoutPreviewResult = {
   };
   items: CheckoutItem[];
   pricing: CheckoutPricing;
+  promoCode?: { code: string; discountAmount: number };
 };
 
 export class CheckoutService {
   private paymentService: PaymentService;
   private walletService: WalletService;
+  private promoCodeService: PromoCodeService;
   private readonly serviceChargeThreshold = 15000;
   private readonly serviceChargeRateBelowThreshold = 0.049;
   private readonly serviceChargeRateAtOrAboveThreshold = 0.029;
@@ -82,21 +104,24 @@ export class CheckoutService {
   constructor() {
     this.paymentService = new PaymentService();
     this.walletService = new WalletService();
+    this.promoCodeService = new PromoCodeService();
   }
 
-  private calculateServiceCharge = (subtotal: number) => {
+  private calculateServiceCharge = (effectiveSubtotal: number) => {
     const rate =
-      subtotal < this.serviceChargeThreshold
+      effectiveSubtotal < this.serviceChargeThreshold
         ? this.serviceChargeRateBelowThreshold
         : this.serviceChargeRateAtOrAboveThreshold;
 
-    return Math.round(subtotal * rate);
+    return Math.round(effectiveSubtotal * rate);
   };
 
   private getCheckoutContext = async (
     customerId: string,
     addressId: string,
+    promoCode?: string,
     session?: ClientSession,
+    redeemPromoCode = false,
   ) => {
     const cartQuery = Cart.findOne({ customerId });
 
@@ -144,6 +169,7 @@ export class CheckoutService {
 
     const mealsById = new Map(meals.map((meal) => [meal._id.toString(), meal]));
     const vendorIds = new Set<string>();
+    let hasVendorDiscountInCart = false;
 
     const items = cart.meals.map((item) => {
       const meal = mealsById.get(item.mealId.toString());
@@ -157,6 +183,10 @@ export class CheckoutService {
       }
 
       vendorIds.add(meal.vendorId.toString());
+
+      if (meal.originalPrice !== undefined && meal.originalPrice > meal.price) {
+        hasVendorDiscountInCart = true;
+      }
 
       const unitPrice =
         meal.price + computeCustomizationDelta(item.customization);
@@ -201,8 +231,63 @@ export class CheckoutService {
       );
     }
 
+    // Section 3.2 — a vendor without a Paystack subaccount yet is NOT
+    // blocked from receiving orders (that would break every existing vendor
+    // the moment this ships). Their orders simply skip live Paystack
+    // splitting: the full charge lands on the platform account as it always
+    // has, and vendorNetAmount/vendorSettledAmount tracking still works
+    // correctly for payout via the existing manual VendorPayoutRequest flow.
+    // Once they save bank details and a subaccount is created, new orders
+    // automatically start splitting instantly.
+
     const subtotal = items.reduce((total, item) => total + item.lineTotal, 0);
-    const serviceCharge = this.calculateServiceCharge(subtotal);
+
+    // Section 2.1 — enforced on the meal subtotal alone; processing fee and
+    // VAT never count toward this minimum.
+    if (subtotal < MINIMUM_ORDER_VALUE) {
+      throw new BadRequestException(
+        `Minimum order value is ${MINIMUM_ORDER_VALUE}`,
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    let discountAmount = 0;
+    let appliedPromoCode: { code: string; discountAmount: number } | undefined;
+
+    if (promoCode) {
+      const result = redeemPromoCode
+        ? await this.promoCodeService.redeemPromoCode(
+            session as ClientSession,
+            promoCode,
+            subtotal,
+            hasVendorDiscountInCart,
+          )
+        : await this.promoCodeService.validatePromoCode(
+            promoCode,
+            subtotal,
+            hasVendorDiscountInCart,
+          );
+
+      discountAmount = result.discountAmount;
+      appliedPromoCode = { code: promoCode.trim().toUpperCase(), discountAmount };
+    }
+
+    // Section 5.1 — processing fee is calculated on the discounted subtotal.
+    const effectiveSubtotal = subtotal - discountAmount;
+    const serviceCharge = this.calculateServiceCharge(effectiveSubtotal);
+
+    const financialSettings = await FinancialSettings.findOne().session(
+      session ?? null,
+    );
+    const vatEnabled = financialSettings?.vatEnabled ?? false;
+    // Section 2.3 — VAT is 7.5% on the processing fee ONLY, never the
+    // subtotal or the HomeChef's earnings.
+    const taxAmount = vatEnabled
+      ? Math.round(serviceCharge * VAT_RATE_ON_PROCESSING_FEE * 100) / 100
+      : 0;
+
+    const totalAmount = effectiveSubtotal + serviceCharge + taxAmount;
 
     return {
       cart,
@@ -213,20 +298,22 @@ export class CheckoutService {
         subtotal,
         serviceCharge,
         deliveryFee: 0,
-        taxAmount: 0,
-        discountAmount: 0,
-        totalAmount: subtotal + serviceCharge,
+        taxAmount,
+        discountAmount,
+        totalAmount,
         currency: "NGN",
       },
+      promoCode: appliedPromoCode,
     };
   };
 
   previewCheckout = async (
     customerId: string,
     addressId: string,
+    promoCode?: string,
   ): Promise<CheckoutPreviewResult> => {
-    const { cart, address, vendor, items, pricing } =
-      await this.getCheckoutContext(customerId, addressId);
+    const { cart, address, vendor, items, pricing, promoCode: appliedPromoCode } =
+      await this.getCheckoutContext(customerId, addressId, promoCode);
 
     return {
       cartId: cart._id.toString(),
@@ -251,6 +338,7 @@ export class CheckoutService {
       },
       items,
       pricing,
+      promoCode: appliedPromoCode,
     };
   };
 
@@ -260,6 +348,7 @@ export class CheckoutService {
     cartUpdatedAt: string,
     useWallet = false,
     paymentProvider: CheckoutPaymentProvider = "paystack",
+    promoCode?: string,
   ) => {
     if (paymentProvider === "wallet") {
       throw new BadRequestException(
@@ -291,17 +380,21 @@ export class CheckoutService {
       order,
       payment,
       preview,
+      vendorSubaccountCode,
     } = await transaction.use(
       async (
         session: ClientSession,
         currentCustomerId: string,
         currentAddressId: string,
         expectedCartUpdatedAt: string,
+        currentPromoCode: string | undefined,
       ) => {
         const checkoutContext = await this.getCheckoutContext(
           currentCustomerId,
           currentAddressId,
+          currentPromoCode,
           session,
+          true,
         );
 
         if (
@@ -374,6 +467,23 @@ export class CheckoutService {
           await newOrder.save({ session });
         }
 
+        // Section 3.2/3.3 — fixed 80/20 split of the (discounted) meal
+        // subtotal, never the customer total. The vendor is never charged
+        // the Paystack fee, VAT, or the processing fee.
+        const effectiveSubtotal =
+          checkoutContext.pricing.subtotal - checkoutContext.pricing.discountAmount;
+        const vendorNetAmount = Math.max(
+          Math.round(effectiveSubtotal * VENDOR_PAYOUT_RATE),
+          0,
+        );
+        const paystackFeeAmount = calculatePaystackFee(
+          checkoutContext.pricing.totalAmount,
+        );
+        const splitPayment =
+          paymentProvider === "paystack" &&
+          paystackAmountDue > 0 &&
+          !!checkoutContext.vendor.paystackSubaccountCode;
+
         const [newPayment] = await Payment.create(
           [
             {
@@ -395,14 +505,12 @@ export class CheckoutService {
                   paystackAmountDue,
                 },
               },
-              vendorGrossAmount: checkoutContext.pricing.totalAmount,
-              vendorPlatformFeeAmount: checkoutContext.pricing.serviceCharge,
-              vendorNetAmount: Math.max(
-                checkoutContext.pricing.totalAmount -
-                  checkoutContext.pricing.serviceCharge,
-                0,
-              ),
+              vendorGrossAmount: effectiveSubtotal,
+              vendorPlatformFeeAmount: effectiveSubtotal - vendorNetAmount,
+              vendorNetAmount,
               vendorSettledAmount: 0,
+              paystackFeeAmount,
+              splitPayment,
               settlementStatus: "ineligible",
             },
           ],
@@ -440,9 +548,10 @@ export class CheckoutService {
           order: newOrder,
           payment: newPayment,
           preview: previewResult,
+          vendorSubaccountCode: checkoutContext.vendor.paystackSubaccountCode,
         };
       },
-    )(customerId, addressId, cartUpdatedAt);
+    )(customerId, addressId, cartUpdatedAt, promoCode);
 
     await appSignalDispatcher.emit("order.created", {
       orderId: order._id.toString(),
@@ -562,6 +671,13 @@ export class CheckoutService {
     }
 
     try {
+      // Main account keeps everything except the vendor's 80% subtotal cut
+      // (service charge + VAT + TOW's 20% commission), floored at 0 in case
+      // a wallet payment already covers more than the platform's share.
+      const mainAccountShare = payment.splitPayment
+        ? Math.max(payment.amount - payment.vendorNetAmount, 0)
+        : undefined;
+
       const paymentInitialization =
         await this.paymentService.initializePaystackPayment({
           email: user.email,
@@ -569,6 +685,8 @@ export class CheckoutService {
           reference: payment.reference,
           orderId: order._id.toString(),
           paymentId: payment._id.toString(),
+          subaccountCode: payment.splitPayment ? vendorSubaccountCode : undefined,
+          mainAccountShare,
         });
 
       const updatedPayment = await Payment.findByIdAndUpdate(

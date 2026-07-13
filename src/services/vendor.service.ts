@@ -19,13 +19,72 @@ import {
   VendorOpeningHours,
 } from "../util/vendor-opening-hours.util.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
+import { PaystackSubaccountService } from "./paystack-subaccount.service.js";
 
 export class VendorService {
   private searchRadiusService: SearchRadiusService;
+  private paystackSubaccountService: PaystackSubaccountService;
 
   constructor() {
     this.searchRadiusService = new SearchRadiusService();
+    this.paystackSubaccountService = new PaystackSubaccountService();
   }
+
+  // Paystack Split Payment (spec section 3.2) — creates the vendor's
+  // subaccount if bank details are already on file and one doesn't exist yet.
+  // Failure here must never block approval itself: if bank details aren't
+  // saved yet (the common case — they're usually added later via payout
+  // settings), or the Paystack call fails, the vendor is simply left without
+  // a subaccount for now; saving/updating bank details retries this (see
+  // VendorWalletService.updateVendorPayoutSettings).
+  private tryCreatePaystackSubaccount = async (vendor: InstanceType<typeof Vendor>) => {
+    if (vendor.paystackSubaccountCode) {
+      return;
+    }
+
+    const bankDetails = vendor.payoutSettings?.bankDetails;
+    if (!bankDetails?.bankName || !bankDetails?.accountNumber) {
+      return;
+    }
+
+    try {
+      const { subaccountCode } = await this.paystackSubaccountService.createSubaccount({
+        businessName: vendor.businessName || "TheOtherWife Vendor",
+        bankName: bankDetails.bankName,
+        accountNumber: bankDetails.accountNumber,
+      });
+      vendor.paystackSubaccountCode = subaccountCode;
+      vendor.paystackSubaccountError = undefined;
+      vendor.paystackSubaccountErrorAt = undefined;
+      await vendor.save();
+    } catch (error) {
+      console.error(
+        `Failed to create Paystack subaccount for vendor ${vendor._id.toString()}:`,
+        error,
+      );
+      vendor.paystackSubaccountError =
+        error instanceof Error ? error.message : "Unknown error creating Paystack subaccount";
+      vendor.paystackSubaccountErrorAt = new Date();
+      await vendor.save();
+    }
+  };
+
+  // Admin-triggered manual retry (e.g. after fixing a bad bank name) — reuses
+  // the same no-throw creation path so a repeated failure just updates the
+  // stored error instead of raising to the controller.
+  retryPaystackSubaccountCreation = async (vendorId: string) => {
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor) {
+      throw new NotFoundException(
+        "Vendor not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
+    await this.tryCreatePaystackSubaccount(vendor);
+    return { vendor };
+  };
 
   getFeaturedVendors = async (
     customerUserId?: string,
@@ -470,6 +529,8 @@ export class VendorService {
         ErrorCode.RESOURCE_NOT_FOUND,
       );
     }
+
+    await this.tryCreatePaystackSubaccount(vendor);
 
     return { vendor };
   };

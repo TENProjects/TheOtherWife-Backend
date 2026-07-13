@@ -21,6 +21,17 @@ export interface PaymentDocument extends Document {
   vendorPlatformFeeAmount: number;
   vendorNetAmount: number;
   vendorSettledAmount: number;
+  // Vendor clawback ledger total applied against this payment (Financial &
+  // Commission Spec v1.0, section 4.1 — Scenario A automatic refund).
+  vendorClawbackAmount: number;
+  // Paystack's cut (1.5% + N100, capped at N2000) — absorbed entirely by TOW,
+  // never the vendor. Stored for admin net-profit reporting (section 3.3/7.1).
+  paystackFeeAmount: number;
+  // True when this payment was initialized with a Paystack subaccount split
+  // (section 3.2) — the vendor's 80% cut was deposited directly to their own
+  // bank account by Paystack at charge time, bypassing the manual
+  // VendorPayoutRequest flow entirely for this payment.
+  splitPayment: boolean;
   settlementStatus: string;
   settlementEligibleAt?: Date;
   providerTransactionId?: string;
@@ -126,6 +137,23 @@ const PaymentSchema = new Schema(
       required: true,
       min: 0,
       default: 0,
+    },
+    vendorClawbackAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    paystackFeeAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    splitPayment: {
+      type: Boolean,
+      required: true,
+      default: false,
     },
     settlementStatus: {
       type: String,

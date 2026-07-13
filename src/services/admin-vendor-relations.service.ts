@@ -98,6 +98,54 @@ export class AdminVendorRelationsService {
   };
 
   // ---------------------------------------------------------------------
+  // Paystack Split Payment — subaccount health (spec section 3.2)
+  // ---------------------------------------------------------------------
+
+  // Surfaces vendors who have complete bank details on file but no live
+  // subaccount — either still pending their first attempt or stuck on a
+  // stored error (e.g. an unrecognized bank name) — so admins don't have to
+  // dig through server logs to find them.
+  getPaystackSubaccountIssues = async () => {
+    const vendors = await Vendor.find({
+      paystackSubaccountCode: null,
+      "payoutSettings.bankDetails.bankName": { $nin: [null, ""] },
+      "payoutSettings.bankDetails.accountNumber": { $nin: [null, ""] },
+    })
+      .populate<{ userId: { firstName?: string; lastName?: string; email?: string } }>(
+        "userId",
+        "firstName lastName email",
+      )
+      .sort({ paystackSubaccountErrorAt: -1 })
+      .lean();
+
+    return {
+      vendors: vendors.map((vendor: any) => ({
+        vendorId: vendor._id,
+        businessName: vendor.businessName,
+        vendorName: this.formatVendorName(vendor.userId),
+        email: vendor.userId?.email,
+        bankName: vendor.payoutSettings?.bankDetails?.bankName,
+        accountNumber: vendor.payoutSettings?.bankDetails?.accountNumber,
+        error: vendor.paystackSubaccountError,
+        errorAt: vendor.paystackSubaccountErrorAt,
+      })),
+    };
+  };
+
+  retryPaystackSubaccount = async (adminUserId: string, vendorId: string) => {
+    this.assertValidObjectId(vendorId, "vendor ID");
+    const result = await this.vendorService.retryPaystackSubaccountCreation(vendorId);
+    return {
+      vendorId,
+      vendorName: this.formatVendorName(
+        await User.findById(result.vendor.userId).lean(),
+      ),
+      paystackSubaccountCode: result.vendor.paystackSubaccountCode,
+      paystackSubaccountError: result.vendor.paystackSubaccountError,
+    };
+  };
+
+  // ---------------------------------------------------------------------
   // Vendor Onboarding
   // ---------------------------------------------------------------------
 

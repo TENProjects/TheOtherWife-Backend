@@ -20,6 +20,13 @@ export interface FinancialSettingsDocument extends Document {
   paymentGateways: PaymentGatewayConfig[];
   taxDefaultRate: number;
   taxCategories: TaxCategoryConfig[];
+  // VAT-on-processing-fee toggle (TheOtherWife Financial & Commission Spec
+  // v1.0, section 2.3) — OFF by default until FIRS registration is confirmed.
+  // Tracked separately from `updatedBy` with its own audit trail (who/when)
+  // per the spec's compliance requirement.
+  vatEnabled: boolean;
+  vatToggledAt?: Date;
+  vatToggledBy?: mongoose.Types.ObjectId;
   // System Control (Super Admin) settings — grouped here since this is
   // already the app's one settings singleton, rather than a second one.
   refundAutoApprovalThreshold: number;
@@ -82,6 +89,20 @@ const FinancialSettingsSchema = new Schema(
         { name: "Food & Beverages", rate: 7.5 },
         { name: "Delivery Fee", rate: 7.5 },
       ],
+    },
+    vatEnabled: {
+      type: Boolean,
+      required: true,
+      default: false,
+    },
+    vatToggledAt: {
+      type: Date,
+      required: false,
+    },
+    vatToggledBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
     },
     // Displayed as guidance on the refund decision screen — does not
     // automatically approve refund requests, since no request-creation flow

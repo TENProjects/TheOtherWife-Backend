@@ -38,6 +38,13 @@ export const updateTaxSettingsSchema = z.object({
     .optional(),
 });
 
+// `confirm` must be literally `true` — mirrors the spec's required second
+// confirmation step before VAT can be enabled.
+export const updateVatSettingsSchema = z.object({
+  enabled: z.boolean(),
+  confirm: z.literal(true),
+});
+
 export const updateSystemSettingsSchema = z
   .object({
     refundAutoApprovalThreshold: z.number().min(0).optional(),

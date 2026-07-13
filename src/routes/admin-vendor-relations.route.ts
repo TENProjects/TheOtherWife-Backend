@@ -38,6 +38,56 @@ import {
 
 /**
  * @swagger
+ * /api/v1/admin/vendor-relations/paystack-subaccounts:
+ *   get:
+ *     summary: List vendors with unresolved Paystack subaccount issues (admin)
+ *     description: >-
+ *       Vendors who have complete bank details on file but no live Paystack
+ *       subaccount yet (Financial & Commission Spec v1.0, section 3.2) —
+ *       either not yet attempted or stuck on a stored error (e.g. an
+ *       unrecognized bank name). These vendors still settle via the manual
+ *       VendorPayoutRequest flow until this is resolved.
+ *     tags: [Admin]
+ *     responses:
+ *       "200":
+ *         description: Vendors with unresolved Paystack subaccount issues fetched successfully
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+
+/**
+ * @swagger
+ * /api/v1/admin/vendor-relations/paystack-subaccounts/{vendorId}/retry:
+ *   post:
+ *     summary: Manually retry Paystack subaccount creation for a vendor (admin)
+ *     description: >-
+ *       Useful after correcting a bad bank name/account number. Never throws
+ *       on repeated failure — check the returned `paystackSubaccountError`
+ *       field if `paystackSubaccountCode` is still absent.
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: vendorId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       "200":
+ *         description: Retry attempted (check response body for success/failure)
+ *       "400":
+ *         description: Bad request
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
  * /api/v1/admin/vendor-relations/applications:
  *   get:
  *     summary: List submitted vendor applications (admin)
@@ -561,6 +611,16 @@ class AdminVendorRelationsRouter {
 
   initializeRoutes() {
     this.router.get("/overview", this.controller.getOverviewStats);
+
+    this.router.get(
+      "/paystack-subaccounts",
+      this.controller.getPaystackSubaccountIssues,
+    );
+    this.router.post(
+      "/paystack-subaccounts/:vendorId/retry",
+      adminSensitiveActionRateLimitMiddleware,
+      this.controller.retryPaystackSubaccount,
+    );
 
     this.router.get("/applications", this.controller.getVendorApplications);
     this.router.get(
