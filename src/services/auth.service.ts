@@ -292,6 +292,37 @@ export class AuthService {
       });
   };
 
+  // Lets an already-logged-in, not-yet-verified user request a fresh
+  // verify-signup email on demand (e.g. from an in-app "Resend email"
+  // banner) instead of only ever getting one automatically on an expired
+  // link click.
+  resendVerificationEmail = async (userId: string) => {
+    const user = await User.findById(userId);
+
+    if (!user) {
+      throw new NotFoundException(
+        "User not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.AUTH_USER_NOT_FOUND,
+      );
+    }
+
+    if (user.isEmailVerified) {
+      throw new BadRequestException(
+        "This email is already verified",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    const { emailToken, emailTokenExpiry } = generateEmailToken();
+    user.emailToken = emailToken;
+    user.emailTokenExpiry = emailTokenExpiry;
+    await user.save();
+
+    await this.sendVerificationEmail(user.omitPassword());
+  };
+
   login = transaction.use(
     async (
       session: ClientSession,

@@ -70,7 +70,12 @@ import { zodValidation } from "../middlewares/validation.js";
  * @openapi
  * /api/v1/auth/verify:
  *   get:
- *     summary: Verify a new user's email after signup
+ *     summary: Verify a new user's email after signup (browser-facing HTML page)
+ *     description: >-
+ *       This is the link opened directly from the verify-signup email, not
+ *       an API call made by the app — it always renders a branded HTML
+ *       landing page (src/templates/verify-result.template.html), for both
+ *       success and failure (invalid/expired token), rather than JSON.
  *     tags: [Auth]
  *     parameters:
  *       - in: query
@@ -81,35 +86,49 @@ import { zodValidation } from "../middlewares/validation.js";
  *         description: The email verification token sent to the user's email
  *     responses:
  *       "200":
- *         description: User verified successfully
+ *         description: Verification succeeded — renders the success HTML page
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       "400":
+ *         description: Invalid or expired token — renders the failure HTML page (a new verification email is sent automatically when expired)
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       "404":
+ *         description: Token not found — renders the failure HTML page
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/resend-verification:
+ *   post:
+ *     summary: Resend the verify-signup email to the current logged-in user
+ *     description: >-
+ *       Lets an already-authenticated, not-yet-verified user request a
+ *       fresh verification email on demand (e.g. from an in-app banner)
+ *       instead of only getting one automatically on signup or on an
+ *       expired-link click.
+ *     tags: [Auth]
+ *     responses:
+ *       "200":
+ *         description: Verification email sent successfully
  *         content:
  *           application/json:
  *             schema:
  *               $ref: "#/components/schemas/ApiResponse"
+ *       "400":
+ *         description: Email is already verified
  *       "401":
  *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/responses/401"
- *       "403":
- *         description: Forbidden
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/responses/403"
  *       "404":
- *         description: Not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/responses/404"
- *       "500":
- *         description: Internal server error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/responses/500"
+ *         description: User not found
  */
 
 /**
@@ -265,6 +284,11 @@ class AuthRouter {
       this.authController.handleSignup,
     );
     this.router.get("/verify", this.authController.verifySignup);
+    this.router.post(
+      "/resend-verification",
+      authMiddleware,
+      this.authController.handleResendVerificationEmail,
+    );
     this.router.post(
       "/login",
       zodValidation(loginUserSchema),

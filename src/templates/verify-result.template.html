@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}}</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #FDFDFD;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .wrapper {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            box-sizing: border-box;
+        }
+
+        .card {
+            max-width: 420px;
+            width: 100%;
+            background-color: #ffffff;
+            border-radius: 16px;
+            border: 1px solid #F0F0F0;
+            padding: 40px 32px;
+            text-align: center;
+        }
+
+        .brand {
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #44C455;
+            margin-bottom: 24px;
+        }
+
+        .icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px auto;
+            font-size: 32px;
+            background-color: {{iconBackground}};
+            color: {{iconColor}};
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1A1A1A;
+            margin: 0 0 12px 0;
+            letter-spacing: -0.3px;
+        }
+
+        p {
+            font-size: 15px;
+            line-height: 1.6;
+            color: #6B6B6B;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrapper">
+        <div class="card">
+            <div class="brand">TheOtherWife</div>
+            <div class="icon">{{icon}}</div>
+            <h1>{{title}}</h1>
+            <p>{{message}}</p>
+        </div>
+    </div>
+</body>
+
+</html>

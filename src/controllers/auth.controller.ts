@@ -9,6 +9,28 @@ import { HttpStatus } from "../config/http.config.js";
 
 import { nodeEnv } from "../constants/env.js";
 import { ApiResponse } from "../util/response.util.js";
+import { getTemplate } from "../util/get-template.util.js";
+
+// Renders the branded landing page a user sees after tapping the
+// verify-signup email link — this is a browser-rendered page (not a JSON
+// API response), so it needs to look like something a human should see.
+const renderVerifyResultPage = async (options: {
+  success: boolean;
+  title: string;
+  message: string;
+}): Promise<string> => {
+  const template = await getTemplate(
+    "src/templates",
+    "verify-result.template.html",
+  );
+
+  return template
+    .replaceAll("{{title}}", options.title)
+    .replaceAll("{{message}}", options.message)
+    .replaceAll("{{icon}}", options.success ? "&#10003;" : "&#10005;")
+    .replaceAll("{{iconBackground}}", options.success ? "#E6F8EC" : "#FDEAEA")
+    .replaceAll("{{iconColor}}", options.success ? "#44C455" : "#E5484D");
+};
 
 export class AuthController {
   authService: AuthService;
@@ -60,27 +82,44 @@ export class AuthController {
     },
   );
 
+  // Reached by a user tapping the link in their verify-signup email — a
+  // browser hit, not the app calling an API, so it renders an HTML landing
+  // page rather than a JSON response. Errors are handled locally (not
+  // rethrown) so the global JSON error middleware never intercepts this
+  // route and breaks the page.
   verifySignup = handleAsyncControl(
     async (
       req: Request<{}, {}, {}, { token: string }>,
       res: Response,
-    ): Promise<any> => {
+    ): Promise<Response> => {
       const emailToken = req.query.token as string;
       console.log(`Received verification request for token: ${emailToken}`);
       try {
         const userWithoutPassword =
           await this.authService.verifySignup(emailToken);
 
-        return res.status(HttpStatus.OK).json({
-          status: "ok",
-          message: "Email verified successfully",
-          data: {
-            userWithoutPassword,
-          },
-        } as ApiResponse);
-      } catch (error) {
+        const html = await renderVerifyResultPage({
+          success: true,
+          title: "Email Verified!",
+          message: `Thanks${userWithoutPassword?.firstName ? `, ${userWithoutPassword.firstName}` : ""}! Your email has been verified. You can now return to the TheOtherWife app.`,
+        });
+
+        return res.status(HttpStatus.OK).type("html").send(html);
+      } catch (error: any) {
         console.error("Error in verifySignup controller:", error);
-        throw error;
+
+        const html = await renderVerifyResultPage({
+          success: false,
+          title: "Verification Failed",
+          message:
+            error?.message ||
+            "This verification link is invalid or has expired.",
+        });
+
+        return res
+          .status(error?.statusCode || HttpStatus.BAD_REQUEST)
+          .type("html")
+          .send(html);
       }
     },
   );
@@ -198,6 +237,18 @@ export class AuthController {
       } catch (error) {
         throw error;
       }
+    },
+  );
+
+  handleResendVerificationEmail = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const userId = req?.user?._id as unknown as string;
+      await this.authService.resendVerificationEmail(userId);
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Verification email sent successfully",
+      } as ApiResponse);
     },
   );
 
