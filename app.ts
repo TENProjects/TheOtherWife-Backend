@@ -50,6 +50,8 @@ import { adminReviewRouter } from "./src/routes/admin-review.route.js";
 import { adminUserManagementRouter } from "./src/routes/admin-user-management.route.js";
 import { adminCmsRouter } from "./src/routes/admin-cms.route.js";
 import { cmsRouter } from "./src/routes/cms.route.js";
+import { notificationRouter } from "./src/routes/notification.route.js";
+import { adminNotificationRouter } from "./src/routes/admin-notification.route.js";
 import "./src/signals/push-notification.signal.js";
 
 export class App {
@@ -165,6 +167,8 @@ export class App {
     this.app.use("/api/v1/admin/users", adminUserManagementRouter);
     this.app.use("/api/v1/admin/cms", adminCmsRouter);
     this.app.use("/api/v1/cms", cmsRouter);
+    this.app.use("/api/v1/notifications", notificationRouter);
+    this.app.use("/api/v1/admin/notifications", adminNotificationRouter);
 
     this.app.get("/api-docs", async (_req, res) => {
       try {

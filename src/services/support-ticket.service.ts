@@ -11,6 +11,7 @@ import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { nextSequence } from "../util/counter.util.js";
+import { NotificationService } from "./notification.service.js";
 
 type Pagination = { page?: number; limit?: number };
 
@@ -40,6 +41,52 @@ const omitInternalNotes = (ticket: SupportTicketDocument) => {
 };
 
 export class SupportTicketService {
+  private notificationService = new NotificationService();
+
+  // Notifies whichever parties didn't just send this reply — additive,
+  // fire-and-forget-adjacent (awaited, but errors here shouldn't be
+  // possible in normal operation since it's just a DB insert; if it ever
+  // throws, that's a real bug worth surfacing rather than swallowing).
+  private notifyOnReply = async (
+    ticket: SupportTicketDocument,
+    excludeSenderType: "customer" | "vendor" | "admin",
+  ) => {
+    const notifications: Promise<unknown>[] = [];
+
+    if (excludeSenderType !== "customer") {
+      notifications.push(
+        this.notificationService.create({
+          recipientUserId: ticket.customerId.toString(),
+          recipientType: "customer",
+          type: "support_ticket",
+          title: `New reply on ticket ${ticket.ticketNumber}`,
+          body: ticket.subject,
+          relatedEntityType: "SupportTicket",
+          relatedEntityId: (ticket._id as any).toString(),
+        }),
+      );
+    }
+
+    if (excludeSenderType !== "vendor" && ticket.vendorId) {
+      const vendor = await Vendor.findById(ticket.vendorId).select("userId");
+      if (vendor) {
+        notifications.push(
+          this.notificationService.create({
+            recipientUserId: vendor.userId.toString(),
+            recipientType: "vendor",
+            type: "support_ticket",
+            title: `New reply on ticket ${ticket.ticketNumber}`,
+            body: ticket.subject,
+            relatedEntityType: "SupportTicket",
+            relatedEntityId: (ticket._id as any).toString(),
+          }),
+        );
+      }
+    }
+
+    await Promise.all(notifications);
+  };
+
   private getVendorByUserId = async (userId: string) => {
     const vendor = await Vendor.findOne({ userId });
     if (!vendor) {
@@ -191,6 +238,7 @@ export class SupportTicketService {
       createdAt: new Date(),
     });
     await ticket.save();
+    await this.notifyOnReply(ticket, "customer");
 
     return omitInternalNotes(ticket);
   };
@@ -262,6 +310,7 @@ export class SupportTicketService {
       createdAt: new Date(),
     });
     await ticket.save();
+    await this.notifyOnReply(ticket, "vendor");
 
     return omitInternalNotes(ticket);
   };
@@ -357,6 +406,7 @@ export class SupportTicketService {
       createdAt: new Date(),
     });
     await ticket.save();
+    await this.notifyOnReply(ticket, "admin");
 
     return ticket;
   };
