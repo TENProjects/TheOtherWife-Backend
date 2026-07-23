@@ -252,6 +252,7 @@ export class SupportTicketService {
     const [tickets, total] = await Promise.all([
       SupportTicket.find({ vendorId: vendor._id })
         .select("-internalNotes")
+        .populate("customerId", "firstName lastName")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(safeLimit),
@@ -269,7 +270,9 @@ export class SupportTicketService {
     const ticket = await SupportTicket.findOne({
       _id: ticketId,
       vendorId: vendor._id,
-    }).select("-internalNotes");
+    })
+      .select("-internalNotes")
+      .populate("customerId", "firstName lastName");
 
     if (!ticket) {
       throw new NotFoundException(
