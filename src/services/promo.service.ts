@@ -46,7 +46,7 @@ export class PromoService {
     session: ClientSession,
     order: OrderDocument,
   ): Promise<PromoCreditResult> => {
-    if (order.status !== "paid" || order.paymentStatus !== "succeeded") {
+    if (order.status !== "paid" || order.paymentStatus !== "paid") {
       return { awarded: false, reason: "order_not_paid" };
     }
 

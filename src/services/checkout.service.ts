@@ -622,7 +622,7 @@ export class CheckoutService {
           }
 
           orderRecord.status = "paid";
-          orderRecord.paymentStatus = "succeeded";
+          orderRecord.paymentStatus = "paid";
           orderRecord.paidAt = paidAt;
           await orderRecord.save({ session });
 
@@ -726,7 +726,11 @@ export class CheckoutService {
             Order.findByIdAndUpdate(
               orderId,
               {
-                $set: { status: "payment_failed", paymentStatus: "failed" },
+                $set: {
+                  status: "cancelled",
+                  cancellationReason: "payment_timeout",
+                  paymentStatus: "failed",
+                },
               },
               { session },
             ),

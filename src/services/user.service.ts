@@ -161,7 +161,7 @@ export class UserService {
           totalSpent: {
             $sum: {
               $cond: [
-                { $eq: ["$paymentStatus", "succeeded"] },
+                { $eq: ["$paymentStatus", "paid"] },
                 "$totalAmount",
                 0,
               ],
@@ -518,13 +518,13 @@ export class UserService {
       }),
       Meal.countDocuments({ isDeleted: false }),
       Order.aggregate<{ _id: null; totalRevenue: number }>([
-        { $match: { paymentStatus: "succeeded" } },
+        { $match: { paymentStatus: "paid" } },
         { $group: { _id: null, totalRevenue: { $sum: "$totalAmount" } } },
       ]),
       Order.aggregate<{ _id: null; totalRevenue: number }>([
         {
           $match: {
-            paymentStatus: "succeeded",
+            paymentStatus: "paid",
             createdAt: { $gte: startOfThisMonth },
           },
         },
@@ -533,7 +533,7 @@ export class UserService {
       Order.aggregate<{ _id: null; totalRevenue: number }>([
         {
           $match: {
-            paymentStatus: "succeeded",
+            paymentStatus: "paid",
             createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth },
           },
         },
@@ -591,14 +591,12 @@ export class UserService {
     };
   };
 
-  // Human-readable label for order statuses shown in "Recent Rejected/Failed
-  // Orders" — derived from the real stored status enum, not a captured free-text
-  // reason (no order status currently captures one beyond vendor rejection).
-  private readonly rejectedOrderStatusLabels: Record<string, string> = {
-    vendor_rejected: "Vendor rejected",
-    payment_failed: "Payment failed",
-    customer_cancelled: "Cancelled by customer",
-    expired: "Order expired",
+  // Human-readable label for the cancellationReason captured on cancelled
+  // orders, shown in "Recent Rejected/Failed Orders".
+  private readonly cancellationReasonLabels: Record<string, string> = {
+    vendor_unavailable: "Vendor rejected",
+    payment_timeout: "Payment failed",
+    customer_requested: "Cancelled by customer",
   };
 
   private resolvePeriodStart = (
@@ -663,7 +661,7 @@ export class UserService {
       }>([
         {
           $match: {
-            paymentStatus: "succeeded",
+            paymentStatus: "paid",
             createdAt: { $gte: sixMonthsAgo },
           },
         },
@@ -709,12 +707,10 @@ export class UserService {
           },
         },
       ]),
-      Order.find({
-        status: { $in: Object.keys(this.rejectedOrderStatusLabels) },
-      })
+      Order.find({ status: "cancelled" })
         .sort({ createdAt: -1 })
         .limit(10)
-        .select("_id createdAt status customerId")
+        .select("_id createdAt status cancellationReason customerId")
         .populate("customerId", "firstName lastName"),
       Order.countDocuments({
         "addressSnapshot.city": { $exists: true, $ne: "" },
@@ -783,9 +779,8 @@ export class UserService {
           customerName: customer
             ? `${customer.firstName ?? ""} ${customer.lastName ?? ""}`.trim()
             : null,
-          // Derived from the order's real status enum — no order status
-          // currently captures a free-text rejection/failure reason.
-          reason: this.rejectedOrderStatusLabels[orderDoc.status] ?? null,
+          reason:
+            this.cancellationReasonLabels[orderDoc.cancellationReason] ?? null,
         };
       }),
     };
@@ -800,16 +795,10 @@ export class UserService {
     statusBreakdown: { _id: string; count: number }[],
   ) => {
     const summary = { completed: 0, inProgress: 0, cancelled: 0 };
-    const cancelledStatuses = new Set([
-      "customer_cancelled",
-      "vendor_rejected",
-      "expired",
-      "payment_failed",
-    ]);
 
     statusBreakdown.forEach(({ _id: status, count }) => {
       if (status === "delivered") summary.completed += count;
-      else if (cancelledStatuses.has(status)) summary.cancelled += count;
+      else if (status === "cancelled") summary.cancelled += count;
       else summary.inProgress += count; // pending_payment, paid, confirmed, preparing, out_for_delivery
     });
 

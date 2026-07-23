@@ -561,7 +561,7 @@ export class Seeder {
         discountAmount: 0,
         totalAmount: meals[0].price * 2 + 1500 + 750,
         status: "paid",
-        paymentStatus: "succeeded",
+        paymentStatus: "paid",
         paidAt: new Date(),
       },
       {
@@ -601,7 +601,7 @@ export class Seeder {
         discountAmount: 300,
         totalAmount: meals[3].price + meals[6].price * 2 + 1200 + 500 - 300,
         status: "confirmed",
-        paymentStatus: "succeeded",
+        paymentStatus: "paid",
         paidAt: new Date(),
       },
       {

@@ -46,7 +46,7 @@ export class FinancialsService {
       settings,
     ] = await Promise.all([
       Order.aggregate<{ _id: null; revenue: number; commission: number }>([
-        { $match: { paymentStatus: "succeeded" } },
+        { $match: { paymentStatus: "paid" } },
         {
           $group: {
             _id: null,
@@ -58,7 +58,7 @@ export class FinancialsService {
       Order.aggregate<{ _id: null; revenue: number; commission: number }>([
         {
           $match: {
-            paymentStatus: "succeeded",
+            paymentStatus: "paid",
             createdAt: { $gte: startOfThisMonth },
           },
         },
@@ -73,7 +73,7 @@ export class FinancialsService {
       Order.aggregate<{ _id: null; revenue: number; commission: number }>([
         {
           $match: {
-            paymentStatus: "succeeded",
+            paymentStatus: "paid",
             createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth },
           },
         },
@@ -156,7 +156,7 @@ export class FinancialsService {
         }>([
           {
             $match: {
-              paymentStatus: "succeeded",
+              paymentStatus: "paid",
               createdAt: { $gte: twelveMonthsAgo },
             },
           },
@@ -177,7 +177,7 @@ export class FinancialsService {
         // serviceCharge is captured at the order level, not per item, so this
         // is a proportional allocation rather than a directly stored figure.
         Order.aggregate<{ _id: string; commission: number }>([
-          { $match: { paymentStatus: "succeeded" } },
+          { $match: { paymentStatus: "paid" } },
           { $unwind: "$items" },
           {
             $lookup: {
@@ -462,7 +462,7 @@ export class FinancialsService {
     if (range?.from) createdAtMatch.$gte = range.from;
     if (range?.to) createdAtMatch.$lte = range.to;
 
-    const orderMatch: Record<string, unknown> = { paymentStatus: "succeeded" };
+    const orderMatch: Record<string, unknown> = { paymentStatus: "paid" };
     if (Object.keys(createdAtMatch).length > 0) {
       orderMatch.createdAt = createdAtMatch;
     }

@@ -31,25 +31,26 @@ const calculateServiceCharge = (effectiveSubtotal: number): number => {
 };
 
 // Every order.status enum value, paired with the paymentStatus it would
-// realistically carry, and whether a discount/refund should be simulated —
-// covers all 10 status values and all 5 paymentStatus values.
+// realistically carry, and — for "cancelled" — every cancellationReason
+// value. Covers all 7 status values, all 4 paymentStatus values, and all 3
+// cancellationReason values.
 const SCENARIOS: Array<{
   status: string;
   paymentStatus: string;
+  cancellationReason?: string;
   discountAmount?: number;
   paidAt?: boolean;
   deliveredAt?: boolean;
 }> = [
   { status: "pending_payment", paymentStatus: "pending" },
-  { status: "paid", paymentStatus: "succeeded", paidAt: true },
-  { status: "confirmed", paymentStatus: "succeeded", paidAt: true },
-  { status: "preparing", paymentStatus: "succeeded", paidAt: true },
-  { status: "out_for_delivery", paymentStatus: "succeeded", paidAt: true, discountAmount: 500 },
-  { status: "delivered", paymentStatus: "succeeded", paidAt: true, deliveredAt: true },
-  { status: "payment_failed", paymentStatus: "failed" },
-  { status: "customer_cancelled", paymentStatus: "refunded", paidAt: true },
-  { status: "vendor_rejected", paymentStatus: "refunded", paidAt: true },
-  { status: "expired", paymentStatus: "expired" },
+  { status: "paid", paymentStatus: "paid", paidAt: true },
+  { status: "confirmed", paymentStatus: "paid", paidAt: true },
+  { status: "preparing", paymentStatus: "paid", paidAt: true },
+  { status: "out_for_delivery", paymentStatus: "paid", paidAt: true, discountAmount: 500 },
+  { status: "delivered", paymentStatus: "paid", paidAt: true, deliveredAt: true },
+  { status: "cancelled", cancellationReason: "customer_requested", paymentStatus: "refunded", paidAt: true },
+  { status: "cancelled", cancellationReason: "vendor_unavailable", paymentStatus: "refunded", paidAt: true },
+  { status: "cancelled", cancellationReason: "payment_timeout", paymentStatus: "failed" },
 ];
 
 async function main() {
@@ -165,16 +166,22 @@ async function main() {
       totalAmount,
       status: scenario.status,
       paymentStatus: scenario.paymentStatus,
+      cancellationReason: scenario.cancellationReason,
       paidAt: scenario.paidAt ? now : undefined,
       deliveredAt: scenario.deliveredAt ? now : undefined,
     });
 
-    created.push(`${order._id.toString()}  status=${scenario.status}  paymentStatus=${scenario.paymentStatus}  total=${totalAmount}`);
+    created.push(
+      `${order._id.toString()}  status=${scenario.status}${scenario.cancellationReason ? ` (${scenario.cancellationReason})` : ""}  paymentStatus=${scenario.paymentStatus}  total=${totalAmount}`,
+    );
 
-    if (scenario.paymentStatus === "succeeded" || scenario.paymentStatus === "refunded") {
+    if (scenario.paymentStatus === "paid" || scenario.paymentStatus === "refunded") {
       const vendorNetAmount = Math.max(Math.round(effectiveSubtotal * 0.8), 0);
       const vendorGrossAmount = effectiveSubtotal;
       const vendorPlatformFeeAmount = effectiveSubtotal - vendorNetAmount;
+      // Payment.status keeps its own (unaffected) vocabulary — "succeeded"
+      // rather than Order.paymentStatus's "paid" — see payment.model.ts.
+      const paymentModelStatus = scenario.paymentStatus === "paid" ? "succeeded" : "refunded";
 
       await Payment.create({
         context: "order",
@@ -185,7 +192,7 @@ async function main() {
         reference: `tow_seed_${order._id.toString()}`,
         amount: totalAmount,
         currency: "NGN",
-        status: scenario.paymentStatus,
+        status: paymentModelStatus,
         vendorGrossAmount,
         vendorPlatformFeeAmount,
         vendorNetAmount,

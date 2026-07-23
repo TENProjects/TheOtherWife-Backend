@@ -40,6 +40,9 @@ export interface OrderDocument extends Document {
   paystackAmountDue: number;
   status: string;
   paymentStatus: string;
+  // Only set when status === "cancelled" — see status enum comment below for
+  // which trigger maps to which reason.
+  cancellationReason?: string;
   paidAt?: Date;
   deliveredAt?: Date;
 }
@@ -223,17 +226,22 @@ const OrderSchema = new Schema(
         "preparing",
         "out_for_delivery",
         "delivered",
-        "payment_failed",
-        "customer_cancelled",
-        "vendor_rejected",
-        "expired",
+        // Single terminal cancellation state — the trigger (customer,
+        // vendor, or a failed/incomplete payment) is captured separately in
+        // cancellationReason rather than as distinct status values.
+        "cancelled",
       ],
       default: "pending_payment",
     },
     paymentStatus: {
       type: String,
-      enum: ["pending", "succeeded", "failed", "expired", "refunded"],
+      enum: ["pending", "paid", "failed", "refunded"],
       default: "pending",
+    },
+    cancellationReason: {
+      type: String,
+      enum: ["customer_requested", "vendor_unavailable", "payment_timeout"],
+      required: false,
     },
     paidAt: {
       type: Date,

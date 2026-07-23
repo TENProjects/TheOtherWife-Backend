@@ -226,7 +226,8 @@ export class PaymentService {
           }
 
           order.paymentStatus = "failed";
-          order.status = "payment_failed";
+          order.status = "cancelled";
+          order.cancellationReason = "payment_timeout";
           await order.save({ session });
 
           await this.walletService.releaseReservedWalletForOrder(
@@ -250,7 +251,7 @@ export class PaymentService {
           customerUserId: result.order.customerId.toString(),
           vendorId: result.order.vendorId.toString(),
           previousStatus: "pending_payment",
-          currentStatus: "payment_failed",
+          currentStatus: "cancelled",
         });
       }
 
@@ -305,7 +306,7 @@ export class PaymentService {
           );
         }
 
-        order.paymentStatus = "succeeded";
+        order.paymentStatus = "paid";
         order.status = "paid";
         order.paidAt = paymentRecord.paidAt;
         await order.save({ session });

@@ -45,9 +45,9 @@ export class RefundService {
       );
     }
 
-    if (order.paymentStatus !== "succeeded") {
+    if (order.paymentStatus !== "paid") {
       throw new BadRequestException(
-        "Only orders with a succeeded payment can be refunded",
+        "Only orders with a paid payment status can be refunded",
         HttpStatus.BAD_REQUEST,
         ErrorCode.VALIDATION_ERROR,
       );

@@ -254,7 +254,8 @@ export class OrderService {
           );
         }
 
-        orderRecord.status = "vendor_rejected";
+        orderRecord.status = "cancelled";
+        orderRecord.cancellationReason = "vendor_unavailable";
         orderRecord.paymentStatus = "refunded";
         await orderRecord.save({ session });
 
@@ -276,7 +277,7 @@ export class OrderService {
       customerUserId: order.customerId.toString(),
       vendorId: order.vendorId.toString(),
       previousStatus: "paid",
-      currentStatus: "vendor_rejected",
+      currentStatus: "cancelled",
     });
 
     return { order };
@@ -321,7 +322,8 @@ export class OrderService {
           );
         }
 
-        orderRecord.status = "customer_cancelled";
+        orderRecord.status = "cancelled";
+        orderRecord.cancellationReason = "customer_requested";
         orderRecord.paymentStatus = "refunded";
         await orderRecord.save({ session });
 
@@ -343,7 +345,7 @@ export class OrderService {
       customerUserId: order.customerId.toString(),
       vendorId: order.vendorId.toString(),
       previousStatus,
-      currentStatus: "customer_cancelled",
+      currentStatus: "cancelled",
     });
 
     return { order };
@@ -564,7 +566,7 @@ export class OrderService {
       await Promise.all([
         Order.countDocuments(),
         Order.aggregate<{ _id: null; revenue: number }>([
-          { $match: { paymentStatus: "succeeded" } },
+          { $match: { paymentStatus: "paid" } },
           { $group: { _id: null, revenue: { $sum: "$totalAmount" } } },
         ]),
         // Orders still awaiting payment or vendor acceptance past the
@@ -577,7 +579,7 @@ export class OrderService {
           createdAt: { $lt: delayThresholdDate },
         }),
         Order.countDocuments({ paymentStatus: "refunded" }),
-        Order.countDocuments({ paymentStatus: "succeeded" }),
+        Order.countDocuments({ paymentStatus: "paid" }),
       ]);
 
     const revenue = revenueAgg[0]?.revenue ?? 0;
