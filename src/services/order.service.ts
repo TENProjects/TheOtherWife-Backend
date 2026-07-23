@@ -475,19 +475,83 @@ export class OrderService {
     return { order };
   };
 
+  // Shared by getAllOrdersForAdmin and getAdminOrderStatusCounts so the
+  // admin dashboard's status tabs and their pagination/counts always use
+  // the exact same classification — "delayed" mirrors the same
+  // still-unacknowledged-past-threshold definition getPlatformPerformanceMetrics
+  // uses, rather than a second, potentially-divergent definition.
+  buildAdminOrderBucketQuery = async (
+    bucket: "in_progress" | "delayed" | "completed" | "cancelled",
+  ): Promise<Record<string, any>> => {
+    if (bucket === "completed") {
+      return { status: "delivered" };
+    }
+    if (bucket === "cancelled") {
+      return { status: "cancelled" };
+    }
+
+    const settings = await FinancialSettings.findOne().select(
+      "orderDelayThresholdMinutes",
+    );
+    const delayThresholdMinutes = settings?.orderDelayThresholdMinutes ?? 60;
+    const delayThresholdDate = new Date(
+      Date.now() - delayThresholdMinutes * 60 * 1000,
+    );
+
+    if (bucket === "delayed") {
+      return {
+        status: { $in: ["pending_payment", "paid"] },
+        createdAt: { $lt: delayThresholdDate },
+      };
+    }
+
+    return {
+      status: { $nin: ["delivered", "cancelled"] },
+      $or: [
+        { status: { $nin: ["pending_payment", "paid"] } },
+        { createdAt: { $gte: delayThresholdDate } },
+      ],
+    };
+  };
+
+  getAdminOrderStatusCounts = async () => {
+    const [inProgress, delayed, completed, cancelled] = await Promise.all([
+      this.buildAdminOrderBucketQuery("in_progress").then((q) =>
+        Order.countDocuments(q),
+      ),
+      this.buildAdminOrderBucketQuery("delayed").then((q) =>
+        Order.countDocuments(q),
+      ),
+      this.buildAdminOrderBucketQuery("completed").then((q) =>
+        Order.countDocuments(q),
+      ),
+      this.buildAdminOrderBucketQuery("cancelled").then((q) =>
+        Order.countDocuments(q),
+      ),
+    ]);
+
+    return { in_progress: inProgress, delayed, completed, cancelled };
+  };
+
   // Admin: list orders across all vendors/customers, optionally filtered by
-  // status, with pagination and a flag for orders with a pending refund request.
+  // status (a literal Order.status value) or bucket (the admin dashboard's
+  // In Progress/Delayed/Completed/Cancelled classification, computed via
+  // buildAdminOrderBucketQuery), with pagination and a flag for orders with
+  // a pending refund request.
   getAllOrdersForAdmin = async (filters: {
     status?: string;
+    bucket?: "in_progress" | "delayed" | "completed" | "cancelled";
     page?: number;
     limit?: number;
   }) => {
-    const { status, page = 1, limit = 50 } = filters;
+    const { status, bucket, page = 1, limit = 50 } = filters;
     const safeLimit = Math.min(Math.max(limit, 1), 100);
     const safePage = Math.max(page, 1);
 
-    const query: Record<string, any> = {};
-    if (status) {
+    const query: Record<string, any> = bucket
+      ? await this.buildAdminOrderBucketQuery(bucket)
+      : {};
+    if (!bucket && status) {
       query.status = status;
     }
 

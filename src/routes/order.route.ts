@@ -313,6 +313,19 @@ import {
  *         required: false
  *         schema:
  *           type: string
+ *         description: Filter by a literal Order status value. Ignored if `bucket` is also provided.
+ *       - in: query
+ *         name: bucket
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [in_progress, delayed, completed, cancelled]
+ *         description: >-
+ *           Filter by the admin dashboard's status classification instead of
+ *           a literal status — "delayed" and "in_progress" are computed
+ *           server-side using the same threshold as
+ *           /admin/performance-metrics, so pagination and counts for these
+ *           tabs stay accurate. Takes precedence over `status`.
  *       - in: query
  *         name: page
  *         required: false
@@ -359,6 +372,39 @@ import {
  *                                     quantity: { type: number }
  *                         pagination:
  *                           $ref: "#/components/schemas/Pagination"
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+
+/**
+ * @swagger
+ * /api/v1/orders/admin/status-counts:
+ *   get:
+ *     summary: Order counts per admin dashboard status bucket (admin)
+ *     description: >-
+ *       Counts for each of the four tabs the admin orders screen shows —
+ *       backed by the same bucket definitions as GET /admin?bucket=...,
+ *       so tab labels and their paginated contents always agree.
+ *     tags: [Admin]
+ *     responses:
+ *       "200":
+ *         description: Order status counts fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: "#/components/schemas/ApiResponse"
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         in_progress: { type: number }
+ *                         delayed: { type: number }
+ *                         completed: { type: number }
+ *                         cancelled: { type: number }
  *       "401":
  *         description: Unauthorized
  *       "403":
@@ -465,6 +511,13 @@ class OrderRouter {
       roleGuardMiddleware(["admin"]),
       adminRateLimitMiddleware,
       this.orderController.getPlatformPerformanceMetrics,
+    );
+    this.router.get(
+      "/admin/status-counts",
+      authMiddleware,
+      roleGuardMiddleware(["admin"]),
+      adminRateLimitMiddleware,
+      this.orderController.getAdminOrderStatusCounts,
     );
     this.router.get(
       "/admin/:id",

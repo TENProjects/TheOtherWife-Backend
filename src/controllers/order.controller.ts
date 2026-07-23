@@ -169,9 +169,15 @@ export class OrderController {
 
   getAllOrdersForAdmin = handleAsyncControl(
     async (req: Request, res: Response): Promise<Response> => {
-      const { status, page, limit } = req.query;
+      const { status, bucket, page, limit } = req.query;
       const result = await this.orderService.getAllOrdersForAdmin({
         status: status as string | undefined,
+        bucket: bucket as
+          | "in_progress"
+          | "delayed"
+          | "completed"
+          | "cancelled"
+          | undefined,
         page: page ? Number(page) : undefined,
         limit: limit ? Number(limit) : undefined,
       });
@@ -179,6 +185,18 @@ export class OrderController {
       return res.status(HttpStatus.OK).json({
         status: "ok",
         message: "Orders fetched successfully",
+        data: result,
+      } as ApiResponse);
+    },
+  );
+
+  getAdminOrderStatusCounts = handleAsyncControl(
+    async (_req: Request, res: Response): Promise<Response> => {
+      const result = await this.orderService.getAdminOrderStatusCounts();
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Order status counts fetched successfully",
         data: result,
       } as ApiResponse);
     },
