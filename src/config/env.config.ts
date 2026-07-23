@@ -38,14 +38,26 @@ type EnvConfig = {
 
 const getEnvConfig = (): EnvConfig => {
   const getEnv = (key: string): string => process.env[key] ?? "";
+  // JWT_SECRET/JWT_REFRESH_SECRET sign every access/refresh token in the
+  // app, including admin sessions that can approve refunds and vendor
+  // payouts — falling back to a guessable default if the env var is ever
+  // missing would let anyone forge a valid admin token. Fail loudly at
+  // startup instead of silently degrading to a known-weak secret.
+  const requireEnv = (key: string): string => {
+    const value = process.env[key];
+    if (!value) {
+      throw new Error(`Missing required environment variable: ${key}`);
+    }
+    return value;
+  };
 
   return {
     PORT: getEnv("PORT") || "8000",
     HOST_NAME: getEnv("HOST_NAME") || "https://the-other-wife-backend.vercel.app",
     MONGODB_URI: getEnv("MONGODB_URI") || "mongodb://localhost:27017",
     NODE_ENV: getEnv("NODE_ENV") || "development",
-    JWT_SECRET: getEnv("JWT_SECRET") || "secret",
-    JWT_REFRESH_SECRET: getEnv("JWT_REFRESH_SECRET") || "refresh_secret",
+    JWT_SECRET: requireEnv("JWT_SECRET"),
+    JWT_REFRESH_SECRET: requireEnv("JWT_REFRESH_SECRET"),
     GOOGLE_CLIENT_ID: getEnv("GOOGLE_CLIENT_ID"),
     GOOGLE_ANDROID_CLIENT_ID: getEnv("GOOGLE_ANDROID_CLIENT_ID"),
     GOOGLE_IOS_CLIENT_ID: getEnv("GOOGLE_IOS_CLIENT_ID"),

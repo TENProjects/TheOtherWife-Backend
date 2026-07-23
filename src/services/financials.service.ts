@@ -25,13 +25,33 @@ export class FinancialsService {
     return settings;
   };
 
-  // Only Paystack has a real payment integration (see payment.service.ts /
-  // Payment.provider), so it's the only gateway fee that represents an
-  // actual processing cost. Used to derive net profit below.
-  private getRealGatewayFeePercent = (
-    paymentGateways: { key: string; transactionFeePercent: number }[],
-  ): number =>
-    paymentGateways.find((g) => g.key === "paystack")?.transactionFeePercent ?? 0;
+  // Real per-transaction Paystack cost for a date range (or all-time),
+  // summed from the same Payment.paystackFeeAmount field getNetProfitSummary
+  // uses — (amount * 1.5%) + N100, capped at N2000 per transaction (see
+  // calculatePaystackFee in checkout.service.ts) — instead of a flat
+  // percentage-of-revenue estimate, which both ignores the N100 flat
+  // component and never reflects the N2000 cap on larger orders.
+  private getRealPaystackCost = async (range?: {
+    $gte?: Date;
+    $lt?: Date;
+  }): Promise<number> => {
+    const [agg] = await Payment.aggregate<{ _id: null; totalPaystackCosts: number }>([
+      {
+        $match: {
+          status: "succeeded",
+          context: "order",
+          ...(range ? { createdAt: range } : {}),
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalPaystackCosts: { $sum: { $ifNull: ["$paystackFeeAmount", 0] } },
+        },
+      },
+    ]);
+    return agg?.totalPaystackCosts ?? 0;
+  };
 
   getSummary = async () => {
     const now = new Date();
@@ -44,6 +64,9 @@ export class FinancialsService {
       lastMonthAgg,
       pendingWithdrawalsAgg,
       settings,
+      totalPaystackCost,
+      thisMonthPaystackCost,
+      lastMonthPaystackCost,
     ] = await Promise.all([
       Order.aggregate<{ _id: null; revenue: number; commission: number }>([
         { $match: { paymentStatus: "paid" } },
@@ -100,11 +123,10 @@ export class FinancialsService {
         },
       ]),
       this.getOrCreateSettings(),
+      this.getRealPaystackCost(),
+      this.getRealPaystackCost({ $gte: startOfThisMonth }),
+      this.getRealPaystackCost({ $gte: startOfLastMonth, $lt: startOfThisMonth }),
     ]);
-
-    const gatewayFeePercent = this.getRealGatewayFeePercent(
-      settings.paymentGateways,
-    );
 
     const totals = totalsAgg[0] ?? { revenue: 0, commission: 0 };
     const thisMonth = thisMonthAgg[0] ?? { revenue: 0, commission: 0 };
@@ -114,14 +136,11 @@ export class FinancialsService {
       amount: 0,
     };
 
-    // Net profit = commission revenue minus the real cost of processing that
-    // revenue through the platform's actual payment gateway (Paystack).
-    const netProfit =
-      totals.commission - (totals.revenue * gatewayFeePercent) / 100;
-    const netProfitThisMonth =
-      thisMonth.commission - (thisMonth.revenue * gatewayFeePercent) / 100;
-    const netProfitLastMonth =
-      lastMonth.commission - (lastMonth.revenue * gatewayFeePercent) / 100;
+    // Net profit = commission revenue minus the real, per-transaction cost
+    // of processing that revenue through Paystack.
+    const netProfit = totals.commission - totalPaystackCost;
+    const netProfitThisMonth = thisMonth.commission - thisMonthPaystackCost;
+    const netProfitLastMonth = lastMonth.commission - lastMonthPaystackCost;
 
     return {
       totalRevenue: totals.revenue,
@@ -147,7 +166,7 @@ export class FinancialsService {
     const now = new Date();
     const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
-    const [revenueByMonth, commissionByCategoryAgg, settings] =
+    const [revenueByMonth, commissionByCategoryAgg, paystackCostByMonth] =
       await Promise.all([
         Order.aggregate<{
           _id: { year: number; month: number };
@@ -214,19 +233,45 @@ export class FinancialsService {
           { $sort: { commission: -1 } },
           { $limit: 10 },
         ]),
-        this.getOrCreateSettings(),
+        Payment.aggregate<{
+          _id: { year: number; month: number };
+          totalPaystackCosts: number;
+        }>([
+          {
+            $match: {
+              status: "succeeded",
+              context: "order",
+              createdAt: { $gte: twelveMonthsAgo },
+            },
+          },
+          {
+            $group: {
+              _id: {
+                year: { $year: "$createdAt" },
+                month: { $month: "$createdAt" },
+              },
+              totalPaystackCosts: { $sum: { $ifNull: ["$paystackFeeAmount", 0] } },
+            },
+          },
+        ]),
       ]);
 
-    const gatewayFeePercent = this.getRealGatewayFeePercent(
-      settings.paymentGateways,
+    const paystackCostByMonthKey = new Map(
+      paystackCostByMonth.map((entry) => [
+        `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`,
+        entry.totalPaystackCosts,
+      ]),
     );
 
     return {
-      revenueProfitTrend: revenueByMonth.map((entry) => ({
-        month: `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`,
-        revenue: entry.revenue,
-        profit: entry.commission - (entry.revenue * gatewayFeePercent) / 100,
-      })),
+      revenueProfitTrend: revenueByMonth.map((entry) => {
+        const monthKey = `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`;
+        return {
+          month: monthKey,
+          revenue: entry.revenue,
+          profit: entry.commission - (paystackCostByMonthKey.get(monthKey) ?? 0),
+        };
+      }),
       commissionByCategory: commissionByCategoryAgg.map((entry) => ({
         category: entry._id,
         commission: Math.round(entry.commission),
@@ -413,8 +458,10 @@ export class FinancialsService {
 
     const payment = await Payment.findOne({ orderId: order._id });
 
-    // "Refund Absorbed" is Scenario B only (section 7.1) — Scenario A's
-    // TOW-side cost is just the Paystack fee, already reflected below.
+    // "Refund Absorbed" — every customer-facing refund (vendor rejection,
+    // pre-preparation customer cancellation, or an admin-mediated dispute)
+    // now flows through an approved RefundRequest (section 7.1), so this one
+    // lookup captures TOW's refund cost regardless of what triggered it.
     const approvedRefund = await RefundRequest.findOne({
       orderId: order._id,
       status: "approved",

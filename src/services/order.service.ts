@@ -13,29 +13,31 @@ import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import Vendor from "../models/vendor.model.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
 import { transaction } from "../util/transaction.util.js";
-import { WalletService } from "./wallet.service.js";
 import { VendorWalletService } from "./vendor-wallet.service.js";
 
 export class OrderService {
-  private walletService: WalletService;
   private vendorWalletService: VendorWalletService;
 
   constructor() {
-    this.walletService = new WalletService();
     this.vendorWalletService = new VendorWalletService();
   }
 
-  // Refund Scenario A (Financial & Commission Spec v1.0, section 4.1) —
-  // automatic: full customer refund to wallet + full vendor clawback of their
-  // 80% cut of this order, no admin action required. Paystack's fee is the
-  // only thing TOW actually loses (it's already baked out of what gets
-  // refunded/clawed back, since neither side is charged for it).
-  private applyAutomaticRefund = async (
+  // Vendor rejection / pre-preparation customer cancellation both funnel
+  // through here. The vendor's 80% cut is clawed back immediately — that's
+  // a fact about the cancelled order, not a judgment call, so it doesn't
+  // wait on anyone's review (Financial & Commission Spec v1.0, section 4.1).
+  // The customer-facing refund itself, however, now always requires admin
+  // sign-off: this creates a pending RefundRequest instead of crediting the
+  // wallet directly, unifying with Scenario B's admin-mediated flow
+  // (RefundService.decideRefundRequest, section 4.2) rather than bypassing
+  // it. Order.paymentStatus deliberately stays "paid" here — it only becomes
+  // "refunded" once an admin approves the request.
+  private initiateCancellationRefund = async (
     session: ClientSession,
     orderId: string,
     customerId: string,
+    vendorId: string,
     orderTotalAmount: number,
-    currency: string,
     reason: string,
   ) => {
     const payment = await Payment.findOne({ orderId }).session(session);
@@ -43,25 +45,32 @@ export class OrderService {
       return;
     }
 
-    // Full Customer Total (subtotal + processing fee + VAT), regardless of
-    // how much of it was originally paid from wallet vs. Paystack — refunds
-    // always land back in the wallet in full (section 4/6.1).
-    await this.walletService.creditWalletForRefund(
-      session,
-      customerId,
-      orderId,
-      orderTotalAmount,
-      currency,
-    );
-
     await this.vendorWalletService.applyVendorClawback(
       session,
       payment._id.toString(),
       reason,
     );
 
-    payment.status = "refunded";
-    await payment.save({ session });
+    const existingPending = await RefundRequest.findOne({
+      orderId,
+      status: "pending",
+    }).session(session);
+    if (existingPending) {
+      return;
+    }
+
+    await RefundRequest.create(
+      [
+        {
+          orderId,
+          customerId,
+          vendorId,
+          amount: orderTotalAmount,
+          reason,
+        },
+      ],
+      { session },
+    );
   };
 
   private getVendorByUserId = async (userId: string) => {
@@ -256,15 +265,16 @@ export class OrderService {
 
         orderRecord.status = "cancelled";
         orderRecord.cancellationReason = "vendor_unavailable";
-        orderRecord.paymentStatus = "refunded";
+        // paymentStatus stays "paid" — only decideRefundRequest (on admin
+        // approval) flips it to "refunded".
         await orderRecord.save({ session });
 
-        await this.applyAutomaticRefund(
+        await this.initiateCancellationRefund(
           session,
           orderRecord._id.toString(),
           orderRecord.customerId.toString(),
+          orderRecord.vendorId.toString(),
           orderRecord.totalAmount,
-          orderRecord.currency,
           "Vendor rejected order",
         );
 
@@ -283,10 +293,12 @@ export class OrderService {
     return { order };
   };
 
-  // Refund Scenario A's other trigger — customer cancels before the vendor
-  // has started preparation. "confirmed" is the last status where nothing
-  // has been cooked yet; once "preparing", cancellation must go through the
-  // admin-mediated RefundRequest flow (Scenario B) instead.
+  // Customer cancels before the vendor has started preparation. "confirmed"
+  // is the last status where nothing has been cooked yet; once "preparing",
+  // cancellation must go through the customer-initiated RefundRequest flow
+  // (createRefundRequest) instead — this method's own refund still goes
+  // through the same admin-approval step via initiateCancellationRefund,
+  // it's just auto-created rather than requiring the customer to file one.
   cancelOrderByCustomer = async (customerId: string, orderId: string) => {
     const existingOrder = await Order.findOne({
       _id: orderId,
@@ -324,15 +336,16 @@ export class OrderService {
 
         orderRecord.status = "cancelled";
         orderRecord.cancellationReason = "customer_requested";
-        orderRecord.paymentStatus = "refunded";
+        // paymentStatus stays "paid" — only decideRefundRequest (on admin
+        // approval) flips it to "refunded".
         await orderRecord.save({ session });
 
-        await this.applyAutomaticRefund(
+        await this.initiateCancellationRefund(
           session,
           orderRecord._id.toString(),
           orderRecord.customerId.toString(),
+          orderRecord.vendorId.toString(),
           orderRecord.totalAmount,
-          orderRecord.currency,
           "Customer cancelled order before preparation",
         );
 
