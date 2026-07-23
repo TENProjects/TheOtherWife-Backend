@@ -12,7 +12,7 @@ import Vendor from "../models/vendor.model.js";
 import Customer from "../models/customer.model.js";
 import Order from "../models/order.model.js";
 import Meal from "../models/meal.model.js";
-import FinancialSettings from "../models/financialSettings.model.js";
+import Payment from "../models/payment.model.js";
 
 export class UserService {
   getCurrentUser = async (userId: string) => {
@@ -637,7 +637,7 @@ export class UserService {
       trendingLastMonth,
       rejectedOrders,
       totalOrdersForLocationDist,
-      settings,
+      paystackCostByMonth,
     ] = await Promise.all([
       Order.aggregate<{ _id: string; count: number }>([
         { $group: { _id: "$status", count: { $sum: 1 } } },
@@ -715,19 +715,44 @@ export class UserService {
       Order.countDocuments({
         "addressSnapshot.city": { $exists: true, $ne: "" },
       }),
-      FinancialSettings.findOne().select("paymentGateways"),
+      Payment.aggregate<{
+        _id: { year: number; month: number };
+        totalPaystackCosts: number;
+      }>([
+        {
+          $match: {
+            status: "succeeded",
+            context: "order",
+            createdAt: { $gte: sixMonthsAgo },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              year: { $year: "$createdAt" },
+              month: { $month: "$createdAt" },
+            },
+            totalPaystackCosts: { $sum: { $ifNull: ["$paystackFeeAmount", 0] } },
+          },
+        },
+      ]),
     ]);
 
     const lastMonthByMeal = new Map(
       trendingLastMonth.map((entry) => [entry._id, entry.orders]),
     );
 
-    // Only Paystack has a real payment integration (see payment.service.ts) —
-    // it's the only gateway fee that represents an actual processing cost,
-    // same derivation as FinancialsService.getAnalytics.
-    const gatewayFeePercent =
-      settings?.paymentGateways?.find((g) => g.key === "paystack")
-        ?.transactionFeePercent ?? 0;
+    // Real per-transaction Paystack cost, same derivation as
+    // FinancialsService.getAnalytics — summed from Payment.paystackFeeAmount
+    // rather than a flat percentage-of-revenue estimate, which both ignores
+    // the N100 flat component and never reflects the N2000 per-transaction
+    // cap.
+    const paystackCostByMonthKey = new Map(
+      paystackCostByMonth.map((entry) => [
+        `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`,
+        entry.totalPaystackCosts,
+      ]),
+    );
 
     return {
       orderCategories: statusBreakdown.map((entry) => ({
@@ -741,11 +766,14 @@ export class UserService {
       // Scoped by `orderSummaryPeriod` (today/week/month/all) — defaults to
       // all-time when omitted. orderCategories above is always all-time.
       orderSummary: this.buildOrderSummary(periodStatusBreakdown),
-      revenueTrend: revenueByMonth.map((entry) => ({
-        month: `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`,
-        revenue: entry.revenue,
-        profit: entry.commission - (entry.revenue * gatewayFeePercent) / 100,
-      })),
+      revenueTrend: revenueByMonth.map((entry) => {
+        const monthKey = `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`;
+        return {
+          month: monthKey,
+          revenue: entry.revenue,
+          profit: entry.commission - (paystackCostByMonthKey.get(monthKey) ?? 0),
+        };
+      }),
       trendingMenus: trendingThisMonth.map((entry) => ({
         name: entry._id,
         orders: entry.orders,
