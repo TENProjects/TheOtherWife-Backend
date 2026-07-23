@@ -350,6 +350,13 @@ import {
  *                               paymentStatus: { type: string }
  *                               hasPendingRefundRequest: { type: boolean }
  *                               date: { type: string, format: date-time }
+ *                               items:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     mealName: { type: string }
+ *                                     quantity: { type: number }
  *                         pagination:
  *                           $ref: "#/components/schemas/Pagination"
  *       "401":

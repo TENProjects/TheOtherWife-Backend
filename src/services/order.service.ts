@@ -528,6 +528,10 @@ export class OrderService {
             orderObject._id.toString(),
           ),
           date: orderObject.createdAt,
+          items: (orderObject.items ?? []).map((item: any) => ({
+            mealName: item.mealName,
+            quantity: item.quantity,
+          })),
         };
       }),
       pagination: {
