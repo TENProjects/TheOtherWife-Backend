@@ -428,6 +428,70 @@ export class VendorOnboardingService {
     };
   });
 
+  // Post-onboarding "fix a missing document" path — deliberately separate
+  // from saveStep3 rather than reusing it, since saveStep3 unconditionally
+  // rejects any call once onboarding.submittedAt is set (assertNotSubmitted)
+  // and that guard must NOT apply here: this exists specifically so a vendor
+  // whose step-3 upload failed over a bad network can still complete it
+  // after submission/approval. Only fills in documents that are currently
+  // missing — replacing an already-uploaded document isn't allowed here, and
+  // approvalStatus/inspectionStatus are deliberately left untouched (this is
+  // a gap-filling fix, not a document swap that should re-trigger review).
+  addMissingOnboardingDocuments = transaction.use(
+    async (
+      session: ClientSession,
+      userId: string,
+      body: Partial<{
+        governmentId: Record<string, string>;
+        businessCertificate: Record<string, string>;
+        displayImage: Record<string, string>;
+      }>,
+    ) => {
+      const vendor = await this.getVendorByUserId(userId, session);
+      const additionalData = this.normalizeAdditionalData(vendor.additionalData);
+
+      const documentTypes = [
+        "governmentId",
+        "businessCertificate",
+        "displayImage",
+      ] as const;
+
+      const nextDocuments = { ...additionalData.documents };
+
+      for (const type of documentTypes) {
+        const incoming = body[type];
+        if (!incoming) {
+          continue;
+        }
+
+        if (additionalData.documents[type]) {
+          throw new BadRequestException(
+            `${type} has already been uploaded`,
+            HttpStatus.BAD_REQUEST,
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        nextDocuments[type] = incoming;
+
+        if (type === "displayImage" && incoming.fileUrl) {
+          vendor.businessLogoUrl = incoming.fileUrl;
+        }
+      }
+
+      vendor.additionalData = {
+        ...additionalData,
+        documents: nextDocuments,
+      };
+
+      await vendor.save({ session });
+
+      return {
+        documents: nextDocuments,
+      };
+    },
+  );
+
   getCurrentVendorOnboarding = async (userId: string) => {
     const vendor = await this.getVendorByUserId(userId);
     const additionalData = this.normalizeAdditionalData(vendor.additionalData);

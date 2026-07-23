@@ -252,6 +252,24 @@ export class AuthController {
     },
   );
 
+  // Public counterpart of handleResendVerificationEmail above — for a user
+  // with no valid session at all. Always responds with the same generic
+  // message regardless of outcome, so the response itself can't leak
+  // account existence or verification state either.
+  handleResendVerificationEmailByEmail = handleAsyncControl(
+    async (
+      req: Request<{}, {}, { email: string }>,
+      res: Response,
+    ): Promise<Response> => {
+      await this.authService.resendVerificationEmailByEmail(req.body.email);
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message:
+          "If an account with this email exists and isn't verified yet, a new verification email has been sent",
+      } as ApiResponse);
+    },
+  );
+
   handleForgotPassword = handleAsyncControl(
     async (
       req: Request<{}, {}, { email: string }>,

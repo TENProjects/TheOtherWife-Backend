@@ -118,3 +118,17 @@ export const vendorOnboardingStep3Schema = z.object({
   acceptedTerms: strictTrueFromFormSchema,
   acceptedVerification: strictTrueFromFormSchema,
 });
+
+// Post-onboarding "fix a missing document" endpoint — unlike step 3, every
+// document is optional here (a vendor may only be filling in the one that
+// failed to upload), but at least one must be present.
+export const vendorOnboardingUpdateDocumentsSchema = z
+  .object({
+    governmentId: z.preprocess(parseJsonObject, onboardingDocumentSchema.optional()),
+    businessCertificate: z.preprocess(parseJsonObject, onboardingDocumentSchema.optional()),
+    displayImage: z.preprocess(parseJsonObject, onboardingDocumentSchema.optional()),
+  })
+  .refine(
+    (data) => data.governmentId || data.businessCertificate || data.displayImage,
+    { message: "At least one document must be provided" },
+  );

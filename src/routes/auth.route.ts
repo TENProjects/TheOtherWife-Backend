@@ -9,6 +9,7 @@ import {
   loginUserSchema,
   resetPasswordSchema,
   registerUserSchema,
+  resendVerificationByEmailSchema,
 } from "../zod-schema/auth.schema.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { zodValidation } from "../middlewares/validation.js";
@@ -129,6 +130,36 @@ import { zodValidation } from "../middlewares/validation.js";
  *         description: Unauthorized
  *       "404":
  *         description: User not found
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/resend-verification-by-email:
+ *   post:
+ *     summary: Resend the verify-signup email to a given address, no session required
+ *     description: >-
+ *       For a user with no valid session at all (lost the token issued at
+ *       signup, reinstalled the app, etc.) — login itself blocks unverified
+ *       users, so this is the self-service way back in. Always responds with
+ *       the same generic message regardless of whether the account exists
+ *       or is already verified, so it can't be used to enumerate accounts.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email: { type: string, format: email }
+ *     responses:
+ *       "200":
+ *         description: Generic success response, sent regardless of outcome
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
  */
 
 /**
@@ -288,6 +319,11 @@ class AuthRouter {
       "/resend-verification",
       authMiddleware,
       this.authController.handleResendVerificationEmail,
+    );
+    this.router.post(
+      "/resend-verification-by-email",
+      zodValidation(resendVerificationByEmailSchema),
+      this.authController.handleResendVerificationEmailByEmail,
     );
     this.router.post(
       "/login",

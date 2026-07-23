@@ -8,6 +8,7 @@ import {
   vendorOnboardingStep1Schema,
   vendorOnboardingStep2Schema,
   vendorOnboardingStep3Schema,
+  vendorOnboardingUpdateDocumentsSchema,
 } from "../zod-schema/vendor-onboarding.schema.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
@@ -125,6 +126,40 @@ import { uploadVendorOnboardingAssetsToCloudinary } from "../middlewares/cloudin
  *       "200":
  *         description: Vendor onboarding step 3 completed
  *
+ * /api/v1/vendor-onboarding/documents:
+ *   post:
+ *     summary: >-
+ *       Upload one or more onboarding documents that are still missing —
+ *       usable any time after login, including after submission/approval.
+ *       Unlike step-3, only fills in documents that are currently missing;
+ *       an already-uploaded document cannot be replaced via this endpoint.
+ *     tags: [Vendor Onboarding]
+ *     security:
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               governmentIdFile:
+ *                 type: string
+ *                 format: binary
+ *               businessCertificateFile:
+ *                 type: string
+ *                 format: binary
+ *               displayImageFile:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       "200":
+ *         description: Vendor documents updated successfully
+ *       "400":
+ *         description: >-
+ *           No document provided, or the specified document has already
+ *           been uploaded
+ *
  * /api/v1/vendor-onboarding/submit:
  *   post:
  *     summary: Submit vendor onboarding
@@ -186,6 +221,15 @@ class VendorOnboardingRouter {
       uploadVendorOnboardingAssetsToCloudinary,
       zodValidation(vendorOnboardingStep3Schema),
       this.vendorOnboardingController.step3,
+    );
+    this.router.post(
+      "/documents",
+      authMiddleware,
+      roleGuardMiddleware(["vendor"]),
+      uploadVendorOnboardingFiles,
+      uploadVendorOnboardingAssetsToCloudinary,
+      zodValidation(vendorOnboardingUpdateDocumentsSchema),
+      this.vendorOnboardingController.updateDocuments,
     );
     this.router.post(
       "/submit",

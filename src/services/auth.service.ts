@@ -35,16 +35,113 @@ import { getTemplate } from "../util/get-template.util.js";
 import { MailAction } from "../dispatcher/mail.dispatcher.js";
 import { getFormattedData } from "../util/get-maildata.js";
 
+// Resend's error shape (see email.service.ts) formats failures as
+// "Resend API error (<status>): <body>" — pulling the status back out lets
+// sendTrackedEmail tell a permanent failure (bad/rejected address) from a
+// transient one (timeout, 5xx) instead of retrying both identically.
+const parseResendStatusCode = (message?: string): number | undefined => {
+  if (!message) return undefined;
+  const match = message.match(/Resend API error \((\d+)\)/);
+  return match ? Number(match[1]) : undefined;
+};
+
+// Anti-fake-signup allowlist — see the exemption/scope rationale where this
+// is enforced in AuthService.signup.
+const ALLOWED_EMAIL_DOMAINS = new Set([
+  "gmail.com",
+  "yahoo.com",
+  "hotmail.com",
+  "outlook.com",
+  "live.com",
+  "icloud.com",
+]);
+
+type TrackedEmailFields = {
+  statusField:
+    | "verificationEmailStatus"
+    | "welcomeEmailStatus"
+    | "passwordResetEmailStatus";
+  lastAttemptField:
+    | "verificationEmailLastAttemptAt"
+    | "welcomeEmailLastAttemptAt"
+    | "passwordResetEmailLastAttemptAt";
+  errorField:
+    | "verificationEmailError"
+    | "welcomeEmailError"
+    | "passwordResetEmailError";
+};
+
 export class AuthService {
   constructor() {}
   private googleOauthClient = new OAuth2Client(googleClientId);
 
-  private sendVerificationEmail = async (user: any) => {
-    let numOfAttempt = 0;
-    const maxNumOfAttempt = 3;
+  // Shared by the verification, welcome, and password-reset email sends —
+  // retries up to 3 times with a 1s delay, but stops immediately on a
+  // permanent (non-429 4xx) failure rather than burning the remaining
+  // attempts, and persists the final outcome onto the user document (was
+  // previously only console.error'd, with no way to later discover which
+  // customers were affected).
+  private sendTrackedEmail = async (
+    userId: string | { toString(): string },
+    fields: TrackedEmailFields,
+    send: () => Promise<unknown>,
+  ) => {
+    const maxAttempts = 3;
+    let attempt = 0;
 
-    const enableRetry = async (): Promise<void> => {
+    const attemptSend = async (): Promise<void> => {
       try {
+        await send();
+        await User.updateOne(
+          { _id: userId },
+          {
+            $set: {
+              [fields.statusField]: "sent",
+              [fields.lastAttemptField]: new Date(),
+            },
+            $unset: { [fields.errorField]: 1 },
+          },
+        );
+      } catch (error: any) {
+        attempt++;
+        const statusCode = parseResendStatusCode(error?.message);
+        const isPermanentFailure =
+          statusCode !== undefined &&
+          statusCode >= 400 &&
+          statusCode < 500 &&
+          statusCode !== 429;
+
+        if (!isPermanentFailure && attempt < maxAttempts) {
+          await new Promise((res) => setTimeout(res, 1000));
+          return attemptSend();
+        }
+
+        console.error(error);
+        await User.updateOne(
+          { _id: userId },
+          {
+            $set: {
+              [fields.statusField]: "failed",
+              [fields.lastAttemptField]: new Date(),
+              [fields.errorField]: error?.message ?? "Unknown error",
+            },
+          },
+        );
+      }
+    };
+
+    await attemptSend();
+  };
+
+  private sendVerificationEmail = async (user: any) => {
+    await this.sendTrackedEmail(
+      user._id,
+      {
+        statusField: "verificationEmailStatus",
+        lastAttemptField: "verificationEmailLastAttemptAt",
+        errorField: "verificationEmailError",
+      },
+      async () => {
         const htmlTemplate = await getTemplate(
           "src/templates",
           "verify-signup.template.html",
@@ -68,17 +165,20 @@ export class AuthService {
         };
 
         await mailer.relayTo(data as MailData, MailAction.verifySignup);
-      } catch (error) {
-        numOfAttempt++;
-        if (numOfAttempt <= maxNumOfAttempt) {
-          await new Promise((res) => setTimeout(res, 1000));
-          return enableRetry();
-        }
-        console.error(error);
-      }
-    };
+      },
+    );
+  };
 
-    await enableRetry();
+  // Generates a fresh token and re-sends — shared by the authenticated
+  // resend endpoint and the public by-email one below.
+  private resendVerificationEmailForUser = async (user: UserDocument) => {
+    const { emailToken, emailTokenExpiry } = generateEmailToken();
+    user.emailToken = emailToken;
+    user.emailTokenExpiry = emailTokenExpiry;
+    user.verificationEmailStatus = "pending";
+    await user.save();
+
+    await this.sendVerificationEmail(user.omitPassword());
   };
 
   signup =
@@ -108,6 +208,23 @@ export class AuthService {
               HttpStatus.BAD_REQUEST,
               ErrorCode.VALIDATION_ERROR,
             );
+          }
+
+          // Anti-fake-signup measure — admins are exempt since they're
+          // created by another admin (POST /users/admins), not public
+          // signup, and may reasonably use a company email address. This is
+          // the one place all three signup entry points (public /auth/signup,
+          // /vendor-onboarding/step-1, and admin creation) actually converge,
+          // so it's enforced here rather than duplicated across zod schemas.
+          if (userType !== "admin") {
+            const domain = email?.split("@")[1]?.toLowerCase();
+            if (!domain || !ALLOWED_EMAIL_DOMAINS.has(domain)) {
+              throw new BadRequestException(
+                "Please sign up with an email from a recognized provider (Gmail, Yahoo, Hotmail/Outlook, or iCloud)",
+                HttpStatus.BAD_REQUEST,
+                ErrorCode.VALIDATION_ERROR,
+              );
+            }
           }
 
           try {
@@ -248,15 +365,16 @@ export class AuthService {
       })(emailToken)
       .then((result) => {
         const userWithoutPassword = result;
-        console.log("Starting setImmediate for welcome email sending...");
-        let numOfAttempt = 0;
-        const maxNumOfAttempt = 3;
 
         setImmediate(async () => {
-          const enableRetry = async () => {
-            try {
-              console.log("Verified user:", userWithoutPassword);
-
+          await this.sendTrackedEmail(
+            userWithoutPassword._id,
+            {
+              statusField: "welcomeEmailStatus",
+              lastAttemptField: "welcomeEmailLastAttemptAt",
+              errorField: "welcomeEmailError",
+            },
+            async () => {
               const htmlTemplate = await getTemplate(
                 "src/templates",
                 "welcome-email.template.html",
@@ -272,21 +390,9 @@ export class AuthService {
                 message: template,
               };
 
-              const info = await mailer.relayTo(data, MailAction.welcomeUser);
-
-              console.log(`Welcome Email sent successfully: ${info}`);
-            } catch (error: any) {
-              numOfAttempt++;
-              if (numOfAttempt <= maxNumOfAttempt) {
-                await new Promise((res) => setTimeout(res, 1000));
-                return enableRetry();
-              }
-
-              console.error(error);
-            }
-          };
-
-          await enableRetry();
+              await mailer.relayTo(data, MailAction.welcomeUser);
+            },
+          );
         });
         return result;
       });
@@ -315,12 +421,23 @@ export class AuthService {
       );
     }
 
-    const { emailToken, emailTokenExpiry } = generateEmailToken();
-    user.emailToken = emailToken;
-    user.emailTokenExpiry = emailTokenExpiry;
-    await user.save();
+    await this.resendVerificationEmailForUser(user);
+  };
 
-    await this.sendVerificationEmail(user.omitPassword());
+  // Public counterpart of the above, for a user who has no valid session at
+  // all (lost the token issued at signup, reinstalled the app, etc.) — login
+  // itself blocks unverified users, so this is the only self-service way
+  // back in. Mirrors forgotPassword's silent not-found/no-op handling so it
+  // can't be used to enumerate which emails have accounts or their
+  // verification state.
+  resendVerificationEmailByEmail = async (email: string) => {
+    const user = await User.findOne({ email });
+
+    if (!user || user.isEmailVerified) {
+      return;
+    }
+
+    await this.resendVerificationEmailForUser(user);
   };
 
   login = transaction.use(
@@ -590,12 +707,15 @@ export class AuthService {
           return null;
         }
 
-        let numOfAttempt = 0;
-        const maxNumOfAttempt = 3;
-
         setImmediate(async () => {
-          const enableRetry = async () => {
-            try {
+          await this.sendTrackedEmail(
+            result.user._id,
+            {
+              statusField: "passwordResetEmailStatus",
+              lastAttemptField: "passwordResetEmailLastAttemptAt",
+              errorField: "passwordResetEmailError",
+            },
+            async () => {
               const htmlTemplate = await getTemplate(
                 "src/templates",
                 "reset-password.template.html",
@@ -610,21 +730,9 @@ export class AuthService {
                 message: html,
               } as MailData;
 
-              const info = await mailer.relayTo(data, MailAction.resetPassword);
-
-              console.log(`Password reset email sent successfully: ${info}`);
-            } catch (error: any) {
-              numOfAttempt++;
-              if (numOfAttempt <= maxNumOfAttempt) {
-                await new Promise((res) => setTimeout(res, 1000));
-                return enableRetry();
-              }
-
-              console.error(error);
-            }
-          };
-
-          await enableRetry();
+              await mailer.relayTo(data, MailAction.resetPassword);
+            },
+          );
         });
         return result;
       });

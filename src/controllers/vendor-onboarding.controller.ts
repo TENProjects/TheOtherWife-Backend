@@ -77,6 +77,20 @@ export class VendorOnboardingController {
     } as ApiResponse);
   });
 
+  updateDocuments = handleAsyncControl(async (req: Request, res: Response) => {
+    const userId = req.user?._id as unknown as string;
+    const result = await this.vendorOnboardingService.addMissingOnboardingDocuments(
+      userId,
+      req.body,
+    );
+
+    return res.status(HttpStatus.OK).json({
+      status: "ok",
+      message: "Vendor documents updated successfully",
+      data: result,
+    } as ApiResponse);
+  });
+
   submit = handleAsyncControl(async (req: Request, res: Response) => {
     const userId = req.user?._id as unknown as string;
     const result = await this.vendorOnboardingService.submit(userId);

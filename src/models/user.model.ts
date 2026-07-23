@@ -29,6 +29,18 @@ export interface UserDocument extends Document {
   createdAt: Date;
   updatedAt: Date;
   lastLogin: Date;
+  // Outcome tracking for each of the three emails auth.service.ts sends —
+  // previously invisible (console.error only); now queryable, e.g.
+  // User.find({ verificationEmailStatus: "failed" }).
+  verificationEmailStatus?: "pending" | "sent" | "failed";
+  verificationEmailLastAttemptAt?: Date;
+  verificationEmailError?: string;
+  welcomeEmailStatus?: "pending" | "sent" | "failed";
+  welcomeEmailLastAttemptAt?: Date;
+  welcomeEmailError?: string;
+  passwordResetEmailStatus?: "pending" | "sent" | "failed";
+  passwordResetEmailLastAttemptAt?: Date;
+  passwordResetEmailError?: string;
   comparePassword: (password: string) => Promise<boolean>;
   omitPassword: () => Omit<UserDocument, "password">;
 }
@@ -121,6 +133,45 @@ const UserSchema = new Schema(
     },
     lastLogin: {
       type: Date,
+      required: false,
+    },
+    verificationEmailStatus: {
+      type: String,
+      enum: ["pending", "sent", "failed"],
+      default: "pending",
+    },
+    verificationEmailLastAttemptAt: {
+      type: Date,
+      required: false,
+    },
+    verificationEmailError: {
+      type: String,
+      required: false,
+    },
+    welcomeEmailStatus: {
+      type: String,
+      enum: ["pending", "sent", "failed"],
+      default: "pending",
+    },
+    welcomeEmailLastAttemptAt: {
+      type: Date,
+      required: false,
+    },
+    welcomeEmailError: {
+      type: String,
+      required: false,
+    },
+    passwordResetEmailStatus: {
+      type: String,
+      enum: ["pending", "sent", "failed"],
+      default: "pending",
+    },
+    passwordResetEmailLastAttemptAt: {
+      type: Date,
+      required: false,
+    },
+    passwordResetEmailError: {
+      type: String,
       required: false,
     },
   },
