@@ -13,8 +13,11 @@ import Customer from "../models/customer.model.js";
 import Order from "../models/order.model.js";
 import Meal from "../models/meal.model.js";
 import Payment from "../models/payment.model.js";
+import { AuthService } from "./auth.service.js";
 
 export class UserService {
+  private authService = new AuthService();
+
   getCurrentUser = async (userId: string) => {
     if (!userId) {
       throw new NotFoundException(
@@ -966,4 +969,62 @@ export class UserService {
       return { user: user.omitPassword() };
     },
   );
+
+  // Admin User Management (RBAC) — deliberately scoped to userType:"admin"
+  // only; the customer/vendor directory already exists separately at
+  // admin-user-directory.route.ts and is untouched by this.
+  getAdminUsers = async (filters: {
+    page?: number;
+    limit?: number;
+    search?: string;
+  }) => {
+    const { page = 1, limit = 50, search } = filters;
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const safePage = Math.max(page, 1);
+
+    const query: Record<string, unknown> = { userType: "admin" };
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const [admins, total] = await Promise.all([
+      User.find(query)
+        .select("firstName lastName email adminRole status createdAt")
+        .sort({ createdAt: -1 })
+        .skip((safePage - 1) * safeLimit)
+        .limit(safeLimit),
+      User.countDocuments(query),
+    ]);
+
+    return {
+      admins,
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        total,
+        totalPages: Math.max(Math.ceil(total / safeLimit), 1),
+      },
+    };
+  };
+
+  // Reuses the existing, already-working forgotPassword token-generation +
+  // email-send path (auth.service.ts) — triggered by another admin on this
+  // admin's behalf, rather than building a second parallel reset mechanism.
+  resetAdminPassword = async (targetUserId: string) => {
+    const user = await User.findOne({ _id: targetUserId, userType: "admin" });
+
+    if (!user) {
+      throw new NotFoundException(
+        "Admin user not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.AUTH_USER_NOT_FOUND,
+      );
+    }
+
+    await this.authService.forgotPassword(user.email);
+  };
 }

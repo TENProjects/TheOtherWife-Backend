@@ -9,6 +9,7 @@ import {
   adminRateLimitMiddleware,
   adminSensitiveActionRateLimitMiddleware,
 } from "../middlewares/admin-rate-limit.middleware.js";
+import { requireAdminRole } from "../middlewares/require-admin-role.middleware.js";
 import {
   createVendorIssueSchema,
   logVendorCallSchema,
@@ -630,11 +631,13 @@ class AdminVendorRelationsRouter {
     this.router.patch(
       "/applications/:vendorId/approve",
       adminSensitiveActionRateLimitMiddleware,
+      requireAdminRole(["super_admin", "manager"]),
       this.controller.approveVendorApplication,
     );
     this.router.patch(
       "/applications/:vendorId/reject",
       adminSensitiveActionRateLimitMiddleware,
+      requireAdminRole(["super_admin", "manager"]),
       zodValidation(rejectVendorApplicationSchema),
       this.controller.rejectVendorApplication,
     );

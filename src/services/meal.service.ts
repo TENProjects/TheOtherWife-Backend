@@ -42,7 +42,10 @@ export class MealService {
     return Number(score.toFixed(2));
   };
 
-  private refreshMealRatingAggregate = async (
+  // Public so admin-review.service.ts can re-run these after a moderation
+  // takedown (hide/unhide/delete) — a hidden review must stop dragging the
+  // score down the moment it's hidden, not just disappear from display.
+  refreshMealRatingAggregate = async (
     session: ClientSession,
     mealId: mongoose.Types.ObjectId,
   ) => {
@@ -55,6 +58,7 @@ export class MealService {
         {
           $match: {
             mealId,
+            moderationStatus: { $ne: "hidden" },
           },
         },
         {
@@ -66,6 +70,9 @@ export class MealService {
         },
       ]).session(session),
       MealReview.aggregate<{ _id: null; globalAverage: number }>([
+        {
+          $match: { moderationStatus: { $ne: "hidden" } },
+        },
         {
           $group: {
             _id: null,
@@ -97,7 +104,7 @@ export class MealService {
     ).session(session);
   };
 
-  private refreshVendorRatingAggregate = async (
+  refreshVendorRatingAggregate = async (
     session: ClientSession,
     vendorId: mongoose.Types.ObjectId,
   ) => {
@@ -110,6 +117,7 @@ export class MealService {
         {
           $match: {
             vendorId,
+            moderationStatus: { $ne: "hidden" },
           },
         },
         {
@@ -121,6 +129,9 @@ export class MealService {
         },
       ]).session(session),
       MealReview.aggregate<{ _id: null; globalAverage: number }>([
+        {
+          $match: { moderationStatus: { $ne: "hidden" } },
+        },
         {
           $group: {
             _id: null,

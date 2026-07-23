@@ -16,6 +16,7 @@ import {
   adminRateLimitMiddleware,
   adminSensitiveActionRateLimitMiddleware,
 } from "../middlewares/admin-rate-limit.middleware.js";
+import { requireAdminRole } from "../middlewares/require-admin-role.middleware.js";
 
 /**
  * @swagger
@@ -481,6 +482,7 @@ class AdminFinancialsRouter {
       authMiddleware,
       roleGuardMiddleware(["admin"]),
       adminRateLimitMiddleware,
+      requireAdminRole(["super_admin", "manager"]),
     );
     this.initializeRoutes();
   }

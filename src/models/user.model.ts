@@ -23,6 +23,11 @@ export interface UserDocument extends Document {
   // Cleared when the account is reactivated.
   statusReason?: string;
   userType: string;
+  // Only meaningful when userType === "admin". Missing/undefined is treated
+  // as "super_admin" everywhere it's checked (see
+  // requireAdminRole.middleware.ts) — this is what keeps every admin
+  // account created before this field existed at full access, unchanged.
+  adminRole?: "super_admin" | "manager" | "support_agent";
   authType: string;
   isEmailVerified: boolean;
   isPhoneVerified: boolean;
@@ -115,6 +120,11 @@ const UserSchema = new Schema(
       type: String,
       required: true,
       enum: ["customer", "vendor", "admin"],
+    },
+    adminRole: {
+      type: String,
+      enum: ["super_admin", "manager", "support_agent"],
+      required: false,
     },
     authType: {
       type: String,

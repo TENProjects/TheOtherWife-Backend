@@ -190,6 +190,7 @@ export class AuthService {
       password: string;
       userType: string;
       phoneNumber?: string;
+      adminRole?: "super_admin" | "manager" | "support_agent";
     }) => {
       return await transaction
         .use(async (session: ClientSession, body): Promise<any> => {
@@ -200,6 +201,7 @@ export class AuthService {
             userType,
             phoneNumber,
             email,
+            adminRole,
           } = body;
 
           if (!allowedTypes.includes(userType as keyof typeof CreateProfile)) {
@@ -263,6 +265,9 @@ export class AuthService {
                   passwordHash: password,
                   userType,
                   phoneNumber,
+                  ...(userType === "admin"
+                    ? { adminRole: adminRole ?? "super_admin" }
+                    : {}),
                 },
               ],
               { session },

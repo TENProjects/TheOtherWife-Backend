@@ -9,6 +9,11 @@ export interface MealReviewDocument extends Document {
   customerId: mongoose.Types.ObjectId;
   rating: number;
   comment?: string;
+  // Admin takedown tool — reviews still auto-publish exactly as before
+  // (default "visible"); "hidden" excludes a review from both public
+  // display and the rating aggregates (see MealService.refreshMealRatingAggregate
+  // / refreshVendorRatingAggregate) without deleting it outright.
+  moderationStatus: "visible" | "hidden";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,6 +53,12 @@ const MealReviewSchema = new Schema(
       type: String,
       required: false,
       trim: true,
+    },
+    moderationStatus: {
+      type: String,
+      enum: ["visible", "hidden"],
+      default: "visible",
+      index: true,
     },
   },
   { timestamps: true },

@@ -7,6 +7,7 @@ declare global {
     interface User {
       _id?: mongoose.Types.ObjectId;
       userType?: string;
+      adminRole?: "super_admin" | "manager" | "support_agent";
     }
 
     interface Request {

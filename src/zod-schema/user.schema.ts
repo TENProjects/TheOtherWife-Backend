@@ -19,6 +19,10 @@ export const createAdminUserSchema = z
     email: emailSchema,
     password: z.string().trim().min(8),
     phoneNumber: phoneNumberSchema,
+    // Optional — defaults to "super_admin" in AuthService.signup when
+    // omitted, so any existing caller not yet passing this keeps today's
+    // behavior (full access) unchanged.
+    adminRole: z.enum(["super_admin", "manager", "support_agent"]).optional(),
   })
   .refine((data) => data.email && data.phoneNumber, {
     message: "Email and phone number are required",

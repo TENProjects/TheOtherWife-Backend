@@ -273,11 +273,13 @@ export class UserController {
           email: string;
           password: string;
           phoneNumber: string;
+          adminRole?: "super_admin" | "manager" | "support_agent";
         }
       >,
       res: Response,
     ): Promise<Response> => {
-      const { firstName, lastName, email, password, phoneNumber } = req.body;
+      const { firstName, lastName, email, password, phoneNumber, adminRole } =
+        req.body;
       const creatingAdminId = req.user?._id as unknown as string;
 
       const handleSignup = this.authService.signup(["admin"]);
@@ -289,6 +291,7 @@ export class UserController {
           password,
           userType: "admin",
           phoneNumber,
+          adminRole,
         });
 
       logAdminAction({
@@ -296,7 +299,7 @@ export class UserController {
         action: "admin.create",
         targetType: "User",
         targetId: (userWithoutPassword as any)?._id?.toString(),
-        metadata: { email },
+        metadata: { email, adminRole: adminRole ?? "super_admin" },
         ipAddress: req.ip,
         userAgent: req.get("user-agent"),
       });
@@ -305,6 +308,47 @@ export class UserController {
         data: { accessToken, refreshToken, userWithoutPassword },
         status: "ok",
         message: "Admin user created successfully",
+      } as ApiResponse);
+    },
+  );
+
+  getAdminUsers = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const { page, limit, search } = req.query;
+      const result = await this.userService.getAdminUsers({
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+        search: search as string | undefined,
+      });
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Admin users fetched successfully",
+        data: result,
+      } as ApiResponse);
+    },
+  );
+
+  resetAdminPassword = handleAsyncControl(
+    async (
+      req: Request<{ id: string }>,
+      res: Response,
+    ): Promise<Response> => {
+      const adminUserId = req.user?._id as unknown as string;
+      await this.userService.resetAdminPassword(req.params.id);
+
+      logAdminAction({
+        adminUserId,
+        action: "admin_user.reset_password",
+        targetType: "User",
+        targetId: req.params.id,
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Password reset email sent to the admin user",
       } as ApiResponse);
     },
   );

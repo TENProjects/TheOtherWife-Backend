@@ -43,6 +43,11 @@ import { mealPlanRouter } from "./src/routes/meal-plan.route.js";
 import { adminPromoCodeRouter } from "./src/routes/admin-promo-code.route.js";
 import { adminMealPlanRouter } from "./src/routes/admin-meal-plan.route.js";
 import { internalCronRouter } from "./src/routes/internal-cron.route.js";
+import { supportTicketRouter } from "./src/routes/support-ticket.route.js";
+import { vendorSupportTicketRouter } from "./src/routes/vendor-support-ticket.route.js";
+import { adminSupportTicketRouter } from "./src/routes/admin-support-ticket.route.js";
+import { adminReviewRouter } from "./src/routes/admin-review.route.js";
+import { adminUserManagementRouter } from "./src/routes/admin-user-management.route.js";
 import "./src/signals/push-notification.signal.js";
 
 export class App {
@@ -148,6 +153,14 @@ export class App {
     this.app.use("/api/v1/admin/promo-codes", adminPromoCodeRouter);
     this.app.use("/api/v1/admin/meal-plans", adminMealPlanRouter);
     this.app.use("/api/v1/internal/cron", internalCronRouter);
+    this.app.use("/api/v1/support-tickets", supportTicketRouter);
+    this.app.use("/api/v1/vendor/support-tickets", vendorSupportTicketRouter);
+    this.app.use(
+      "/api/v1/admin/support-tickets",
+      adminSupportTicketRouter,
+    );
+    this.app.use("/api/v1/admin/reviews", adminReviewRouter);
+    this.app.use("/api/v1/admin/users", adminUserManagementRouter);
 
     this.app.get("/api-docs", async (_req, res) => {
       try {
