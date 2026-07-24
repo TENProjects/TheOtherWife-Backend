@@ -53,6 +53,7 @@ import { adminCmsRouter } from "./src/routes/admin-cms.route.js";
 import { cmsRouter } from "./src/routes/cms.route.js";
 import { notificationRouter } from "./src/routes/notification.route.js";
 import { adminNotificationRouter } from "./src/routes/admin-notification.route.js";
+import { adminPlatformSettingsRouter } from "./src/routes/admin-platform-settings.route.js";
 import "./src/signals/push-notification.signal.js";
 
 export class App {
@@ -172,6 +173,7 @@ export class App {
     this.app.use("/api/v1/cms", cmsRouter);
     this.app.use("/api/v1/notifications", notificationRouter);
     this.app.use("/api/v1/admin/notifications", adminNotificationRouter);
+    this.app.use("/api/v1/admin/settings", adminPlatformSettingsRouter);
 
     this.app.get("/api-docs", async (_req, res) => {
       try {

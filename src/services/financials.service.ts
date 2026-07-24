@@ -279,14 +279,28 @@ export class FinancialsService {
     };
   };
 
+  // Never returns the raw secretKey to the client — only whether one is on
+  // file — so a stored credential can't leak through a GET response.
   getPaymentGateways = async () => {
     const settings = await this.getOrCreateSettings();
-    return settings.paymentGateways;
+    return settings.paymentGateways.map((gateway) => ({
+      key: gateway.key,
+      name: gateway.name,
+      transactionFeePercent: gateway.transactionFeePercent,
+      isActive: gateway.isActive,
+      publicKey: gateway.publicKey ?? null,
+      hasSecretKey: Boolean(gateway.secretKey),
+    }));
   };
 
   updatePaymentGateway = async (
     key: string,
-    updates: { isActive?: boolean; transactionFeePercent?: number },
+    updates: {
+      isActive?: boolean;
+      transactionFeePercent?: number;
+      publicKey?: string;
+      secretKey?: string;
+    },
     adminUserId: string,
   ) => {
     const settings = await this.getOrCreateSettings();
@@ -306,11 +320,70 @@ export class FinancialsService {
     if (updates.transactionFeePercent !== undefined) {
       gateway.transactionFeePercent = updates.transactionFeePercent;
     }
+    if (updates.publicKey !== undefined) {
+      gateway.publicKey = updates.publicKey;
+    }
+    if (updates.secretKey !== undefined) {
+      gateway.secretKey = updates.secretKey;
+    }
 
     settings.updatedBy = new mongoose.Types.ObjectId(adminUserId);
     await settings.save();
 
-    return gateway;
+    return {
+      key: gateway.key,
+      name: gateway.name,
+      transactionFeePercent: gateway.transactionFeePercent,
+      isActive: gateway.isActive,
+      publicKey: gateway.publicKey ?? null,
+      hasSecretKey: Boolean(gateway.secretKey),
+    };
+  };
+
+  // Live-validates a secret key against the provider's own API — does not
+  // read or write the stored key, so it works against whatever the admin has
+  // currently typed into the form, saved or not.
+  testGatewayConnection = async (
+    key: string,
+    secretKey: string,
+  ): Promise<{ success: boolean; message: string }> => {
+    if (key === "paystack") {
+      const response = await fetch("https://api.paystack.co/bank?perPage=1", {
+        headers: { Authorization: `Bearer ${secretKey}` },
+      });
+      if (response.ok) {
+        return { success: true, message: "Paystack connection successful." };
+      }
+      return {
+        success: false,
+        message:
+          response.status === 401
+            ? "Invalid Paystack secret key."
+            : `Paystack responded with status ${response.status}.`,
+      };
+    }
+
+    if (key === "flutterwave") {
+      const response = await fetch("https://api.flutterwave.com/v3/balances", {
+        headers: { Authorization: `Bearer ${secretKey}` },
+      });
+      if (response.ok) {
+        return { success: true, message: "Flutterwave connection successful." };
+      }
+      return {
+        success: false,
+        message:
+          response.status === 401
+            ? "Invalid Flutterwave secret key."
+            : `Flutterwave responded with status ${response.status}.`,
+      };
+    }
+
+    throw new BadRequestException(
+      `Test Connect is not supported for gateway "${key}"`,
+      HttpStatus.BAD_REQUEST,
+      ErrorCode.VALIDATION_ERROR,
+    );
   };
 
   getCommissionConfig = async () => {

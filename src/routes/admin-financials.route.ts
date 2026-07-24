@@ -6,6 +6,7 @@ import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
 import { zodValidation } from "../middlewares/validation.js";
 import {
+  testPaymentGatewayConnectionSchema,
   updateCommissionConfigSchema,
   updatePaymentGatewaySchema,
   updateSystemSettingsSchema,
@@ -508,6 +509,12 @@ class AdminFinancialsRouter {
       adminSensitiveActionRateLimitMiddleware,
       zodValidation(updatePaymentGatewaySchema),
       this.financialsController.updatePaymentGateway,
+    );
+    this.router.post(
+      "/payment-gateways/:key/test-connect",
+      adminSensitiveActionRateLimitMiddleware,
+      zodValidation(testPaymentGatewayConnectionSchema),
+      this.financialsController.testPaymentGatewayConnection,
     );
 
     this.router.get(

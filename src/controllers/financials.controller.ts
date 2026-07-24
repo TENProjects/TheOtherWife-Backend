@@ -52,7 +52,12 @@ export class FinancialsController {
       req: Request<
         { key: string },
         {},
-        { isActive?: boolean; transactionFeePercent?: number }
+        {
+          isActive?: boolean;
+          transactionFeePercent?: number;
+          publicKey?: string;
+          secretKey?: string;
+        }
       >,
       res: Response,
     ): Promise<Response> => {
@@ -70,7 +75,12 @@ export class FinancialsController {
         action: "financials.gateway_update",
         targetType: "FinancialSettings",
         targetId: key,
-        metadata: req.body,
+        metadata: {
+          isActive: req.body.isActive,
+          transactionFeePercent: req.body.transactionFeePercent,
+          publicKeyChanged: req.body.publicKey !== undefined,
+          secretKeyChanged: req.body.secretKey !== undefined,
+        },
         ipAddress: req.ip,
         userAgent: req.get("user-agent"),
       });
@@ -79,6 +89,25 @@ export class FinancialsController {
         status: "ok",
         message: "Payment gateway updated successfully",
         data: gateway,
+      } as ApiResponse);
+    },
+  );
+
+  testPaymentGatewayConnection = handleAsyncControl(
+    async (
+      req: Request<{ key: string }, {}, { secretKey: string }>,
+      res: Response,
+    ): Promise<Response> => {
+      const { key } = req.params;
+      const result = await this.financialsService.testGatewayConnection(
+        key,
+        req.body.secretKey,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: result.message,
+        data: result,
       } as ApiResponse);
     },
   );

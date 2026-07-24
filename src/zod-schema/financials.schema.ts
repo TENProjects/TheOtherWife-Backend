@@ -6,12 +6,21 @@ export const updatePaymentGatewaySchema = z
   .object({
     isActive: z.boolean().optional(),
     transactionFeePercent: z.number().min(0).max(100).optional(),
+    publicKey: z.string().trim().max(200).optional(),
+    secretKey: z.string().trim().max(200).optional(),
   })
   .refine(
     (value) =>
-      value.isActive !== undefined || value.transactionFeePercent !== undefined,
+      value.isActive !== undefined ||
+      value.transactionFeePercent !== undefined ||
+      value.publicKey !== undefined ||
+      value.secretKey !== undefined,
     { message: "At least one field is required" },
   );
+
+export const testPaymentGatewayConnectionSchema = z.object({
+  secretKey: z.string().trim().min(1),
+});
 
 export const updateCommissionConfigSchema = z
   .object({

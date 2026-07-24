@@ -7,6 +7,8 @@ export interface PaymentGatewayConfig {
   name: string;
   transactionFeePercent: number;
   isActive: boolean;
+  publicKey?: string;
+  secretKey?: string;
 }
 
 export interface TaxCategoryConfig {
@@ -61,6 +63,8 @@ const FinancialSettingsSchema = new Schema(
           name: { type: String, required: true },
           transactionFeePercent: { type: Number, required: true, min: 0 },
           isActive: { type: Boolean, required: true, default: false },
+          publicKey: { type: String, required: false },
+          secretKey: { type: String, required: false },
           _id: false,
         },
       ],
