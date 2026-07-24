@@ -139,7 +139,14 @@ export class PaymentService {
       .update(rawBody)
       .digest("hex");
 
-    return expected === signature;
+    const expectedBuffer = Buffer.from(expected, "hex");
+    const signatureBuffer = Buffer.from(signature, "hex");
+
+    if (expectedBuffer.length !== signatureBuffer.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(expectedBuffer, signatureBuffer);
   };
 
   handlePaystackWebhook = async (

@@ -10,6 +10,7 @@ import {
   resetPasswordSchema,
   registerUserSchema,
   resendVerificationByEmailSchema,
+  refreshTokenSchema,
 } from "../zod-schema/auth.schema.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { zodValidation } from "../middlewares/validation.js";
@@ -340,7 +341,11 @@ class AuthRouter {
       authMiddleware,
       this.authController.handleLogout,
     );
-    this.router.post("/refresh", this.authController.handleRefreshLogin);
+    this.router.post(
+      "/refresh",
+      zodValidation(refreshTokenSchema),
+      this.authController.handleRefreshLogin,
+    );
     this.router.post(
       "/forgot-password",
       zodValidation(forgotPasswordSchema),

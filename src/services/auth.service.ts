@@ -311,10 +311,17 @@ export class AuthService {
     };
 
   verifySignup = async (emailToken: string) => {
+    if (typeof emailToken !== "string" || !emailToken) {
+      throw new BadRequestException(
+        "Invalid or missing verification token",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
     return await transaction
       .use(async (session: ClientSession, emailToken: string): Promise<any> => {
         try {
-          console.log(`Verifying signup with token: ${emailToken}`);
           let user = await User.findOne({ emailToken }).session(session);
 
           if (!user) {

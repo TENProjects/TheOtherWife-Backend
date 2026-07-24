@@ -6,6 +6,8 @@ import { handleAsyncControl } from "../middlewares/handle-async-control.middlewa
 
 import type { Request, Response } from "express";
 import { HttpStatus } from "../config/http.config.js";
+import { BadRequestException } from "../errors/bad-request-exception.error.js";
+import { ErrorCode } from "../enums/error-code.enum.js";
 
 import { nodeEnv } from "../constants/env.js";
 import { ApiResponse } from "../util/response.util.js";
@@ -92,9 +94,16 @@ export class AuthController {
       req: Request<{}, {}, {}, { token: string }>,
       res: Response,
     ): Promise<Response> => {
-      const emailToken = req.query.token as string;
-      console.log(`Received verification request for token: ${emailToken}`);
+      const emailToken = req.query.token;
       try {
+        if (typeof emailToken !== "string" || !emailToken) {
+          throw new BadRequestException(
+            "Invalid or missing verification token",
+            HttpStatus.BAD_REQUEST,
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
         const userWithoutPassword =
           await this.authService.verifySignup(emailToken);
 

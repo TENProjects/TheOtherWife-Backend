@@ -29,9 +29,10 @@ export const errorHandler = (
   }
 
   if (err instanceof Error) {
+    console.error("Unhandled error:", err);
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       message: "Internal Server error",
-      error: err.message || "Unknown error occurred",
+      error: "Something went wrong. Please try again.",
       status: "error",
     });
   }

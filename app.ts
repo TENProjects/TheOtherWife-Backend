@@ -8,6 +8,7 @@ import helmet from "helmet";
 import cors from "cors";
 
 import { errorHandler } from "./src/middlewares/error-handler.middleware.js";
+import { sanitizeQueryAndParams } from "./src/middlewares/sanitize-query.middleware.js";
 
 import { corsOrigin, hostName, port } from "./src/constants/env.js";
 import { Db } from "./src/config/db.config.js";
@@ -61,6 +62,7 @@ export class App {
   constructor() {
     this.app = express();
     this.app.set("trust proxy", 1);
+    this.app.disable("x-powered-by");
     this.db = new Db();
     this.initiializeMiddlewares();
     this.initializeRoutes();
@@ -104,6 +106,7 @@ export class App {
     );
     this.app.use(express.urlencoded({ extended: true }));
     this.app.use(cookieParser());
+    this.app.use(sanitizeQueryAndParams);
     this.app.use(
       rateLimit({
         windowMs: 15 * 60 * 1000,

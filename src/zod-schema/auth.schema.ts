@@ -33,6 +33,10 @@ export const googleLoginSchema = z.object({
   idToken: z.string().trim().min(1),
 });
 
+export const refreshTokenSchema = z.object({
+  refreshToken: z.string().trim().min(1),
+});
+
 export const forgotPasswordSchema = z.object({
   email: emailSchema,
 });
