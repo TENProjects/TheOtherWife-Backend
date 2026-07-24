@@ -804,7 +804,9 @@ export class UserService {
           | null
           | undefined;
         return {
-          id: orderDoc._id.toString(),
+          // Human-readable code, not the raw Mongo ObjectId — matches the
+          // ORD-XXXX convention used across the Orders admin page.
+          id: `ORD-${orderDoc._id.toString().slice(-4).toUpperCase()}`,
           date: orderDoc.createdAt,
           status: orderDoc.status,
           customerName: customer
