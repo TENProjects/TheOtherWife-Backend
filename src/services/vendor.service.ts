@@ -8,6 +8,8 @@ import { UnauthorizedExceptionError } from "../errors/unauthorized-exception.err
 import Vendor from "../models/vendor.model.js";
 import Order from "../models/order.model.js";
 import User from "../models/user.model.js";
+import Address from "../models/address.model.js";
+import { getStateCentroidCoordinates } from "../util/nigeria-state-coordinates.util.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { transaction } from "../util/transaction.util.js";
 import { SearchRadiusService } from "./search-radius.service.js";
@@ -379,6 +381,13 @@ export class VendorService {
         pushNotificationsEnabled?: boolean;
         cuisines?: string[];
         yearsOfExperience?: number;
+        address?: string;
+        city?: string;
+        state?: string;
+        latitude?: number;
+        longitude?: number;
+        postalCode?: string;
+        country?: string;
       },
     ) => {
       if (!userId) {
@@ -400,6 +409,13 @@ export class VendorService {
         pushNotificationsEnabled,
         cuisines,
         yearsOfExperience,
+        address,
+        city,
+        state,
+        latitude,
+        longitude,
+        postalCode,
+        country,
       } = body;
 
       const vendorData: Record<string, any> = {};
@@ -426,6 +442,55 @@ export class VendorService {
       }
       if (yearsOfExperience !== undefined) {
         vendorData["additionalData.business.yearsOfExperience"] = yearsOfExperience;
+      }
+
+      // Onboarding step 1 never actually created a real Address document
+      // for the vendor (only additionalData.location) — this is the Edit
+      // Profile path's chance to fix that going forward for anyone who
+      // edits their address, on top of whatever step 1 now does directly.
+      if (address !== undefined || city !== undefined || state !== undefined) {
+        const existingVendor = await Vendor.findOne({ userId })
+          .select("addressId")
+          .session(session);
+
+        if (existingVendor?.addressId) {
+          const addressUpdate: Record<string, any> = {};
+          if (address !== undefined) addressUpdate.address = address;
+          if (city !== undefined) addressUpdate.city = city;
+          if (state !== undefined) addressUpdate.state = state;
+          if (postalCode !== undefined) addressUpdate.postalCode = postalCode;
+          if (country !== undefined) addressUpdate.country = country;
+          if (typeof latitude === "number") addressUpdate.latitude = latitude;
+          if (typeof longitude === "number") addressUpdate.longitude = longitude;
+
+          await Address.findByIdAndUpdate(existingVendor.addressId, {
+            $set: addressUpdate,
+          }).session(session);
+        } else if (city && state) {
+          const coordinates =
+            typeof latitude === "number" && typeof longitude === "number"
+              ? { latitude, longitude }
+              : getStateCentroidCoordinates(state);
+
+          const [newAddress] = await Address.create(
+            [
+              {
+                userId,
+                label: "work",
+                address,
+                city,
+                state,
+                country: country || "Nigeria",
+                postalCode: postalCode || "000000",
+                latitude: coordinates.latitude,
+                longitude: coordinates.longitude,
+                isDefault: true,
+              },
+            ],
+            { session },
+          );
+          vendorData.addressId = newAddress._id;
+        }
       }
 
       const vendor = await Vendor.findOneAndUpdate(

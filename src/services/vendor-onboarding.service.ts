@@ -2,6 +2,7 @@
 
 import { AuthService } from "./auth.service.js";
 import Vendor from "../models/vendor.model.js";
+import Address from "../models/address.model.js";
 import { transaction } from "../util/transaction.util.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { HttpStatus } from "../config/http.config.js";
@@ -9,6 +10,7 @@ import { ErrorCode } from "../enums/error-code.enum.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
 import { ClientSession } from "mongoose";
 import { CloudinaryService } from "./cloudinary.service.js";
+import { getStateCentroidCoordinates } from "../util/nigeria-state-coordinates.util.js";
 
 type VendorOnboardingData = {
   onboarding: {
@@ -213,6 +215,10 @@ export class VendorOnboardingService {
     state: string;
     city: string;
     address?: string;
+    latitude?: number;
+    longitude?: number;
+    postalCode?: string;
+    country?: string;
     socials?: {
       instagram?: string;
       facebook?: string;
@@ -251,6 +257,27 @@ export class VendorOnboardingService {
     };
 
     vendor.additionalData = nextAdditionalData;
+
+    const hasPreciseCoordinates =
+      typeof body.latitude === "number" && typeof body.longitude === "number";
+    const coordinates = hasPreciseCoordinates
+      ? { latitude: body.latitude as number, longitude: body.longitude as number }
+      : getStateCentroidCoordinates(body.state);
+
+    const address = await Address.create({
+      userId: userWithoutPassword._id,
+      label: "work",
+      address: body.address,
+      city: body.city,
+      state: body.state,
+      country: body.country || "Nigeria",
+      postalCode: body.postalCode || "000000",
+      latitude: coordinates.latitude,
+      longitude: coordinates.longitude,
+      isDefault: true,
+    });
+    vendor.addressId = address._id as any;
+
     await vendor.save();
 
     return {

@@ -446,6 +446,16 @@ const swaggerDefinition = {
           state: { type: "string" },
           city: { type: "string" },
           address: { type: "string" },
+          latitude: {
+            type: "number",
+            description: "Precise geocoded latitude (e.g. from Google Places). Falls back to a state-capital centroid if omitted.",
+          },
+          longitude: {
+            type: "number",
+            description: "Precise geocoded longitude. Falls back to a state-capital centroid if omitted.",
+          },
+          postalCode: { type: "string" },
+          country: { type: "string", description: "Defaults to \"Nigeria\" if omitted." },
           socials: {
             type: "object",
             properties: {

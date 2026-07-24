@@ -406,6 +406,17 @@ import {
  *                 type: string
  *                 description: Comma-separated cuisine list (e.g. "Local,Continental"), stored under additionalData.business.cuisines
  *               yearsOfExperience: { type: number }
+ *               address: { type: string }
+ *               city: { type: string }
+ *               state: { type: string }
+ *               latitude:
+ *                 type: number
+ *                 description: Precise geocoded latitude. Falls back to a state-capital centroid if omitted while creating a new address.
+ *               longitude:
+ *                 type: number
+ *                 description: Precise geocoded longitude. Falls back to a state-capital centroid if omitted while creating a new address.
+ *               postalCode: { type: string }
+ *               country: { type: string }
  *               businessLogo:
  *                 type: string
  *                 format: binary

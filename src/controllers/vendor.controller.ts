@@ -93,6 +93,13 @@ export class VendorController {
           pushNotificationsEnabled?: boolean;
           cuisines?: string[];
           yearsOfExperience?: number;
+          address?: string;
+          city?: string;
+          state?: string;
+          latitude?: number;
+          longitude?: number;
+          postalCode?: string;
+          country?: string;
         }
       >,
       res: Response,
@@ -110,6 +117,13 @@ export class VendorController {
         pushNotificationsEnabled,
         cuisines,
         yearsOfExperience,
+        address,
+        city,
+        state,
+        latitude,
+        longitude,
+        postalCode,
+        country,
       } = req.body;
 
       try {
@@ -124,6 +138,13 @@ export class VendorController {
           pushNotificationsEnabled,
           cuisines,
           yearsOfExperience,
+          address,
+          city,
+          state,
+          latitude,
+          longitude,
+          postalCode,
+          country,
         });
         return res.status(HttpStatus.OK).json({
           status: "ok",

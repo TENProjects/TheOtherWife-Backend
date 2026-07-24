@@ -78,6 +78,10 @@ export const vendorOnboardingStep1Schema = z
     state: nonEmptyString,
     city: nonEmptyString,
     address: z.string().trim().optional(),
+    latitude: z.coerce.number().optional(),
+    longitude: z.coerce.number().optional(),
+    postalCode: z.string().trim().optional(),
+    country: z.string().trim().optional(),
     socials: z
       .object({
         instagram: z.string().trim().optional(),

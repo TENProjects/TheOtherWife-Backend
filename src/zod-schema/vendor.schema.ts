@@ -58,6 +58,13 @@ export const updateVendorProfileSchema = z
     pushNotificationsEnabled: z.coerce.boolean().optional(),
     cuisines: cuisinesListSchema.optional(),
     yearsOfExperience: z.coerce.number().min(0).optional(),
+    address: z.string().trim().optional(),
+    city: z.string().trim().optional(),
+    state: z.string().trim().optional(),
+    latitude: z.coerce.number().optional(),
+    longitude: z.coerce.number().optional(),
+    postalCode: z.string().trim().optional(),
+    country: z.string().trim().optional(),
   })
   .refine(
     (value) => Object.values(value).some((field) => field !== undefined),
