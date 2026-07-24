@@ -1,10 +1,12 @@
 /** @format */
 
 import z from "zod";
+import { TokenExpiredError, JsonWebTokenError, NotBeforeError } from "jsonwebtoken";
 
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/app.error.js";
 import { HttpStatus } from "../config/http.config.js";
+import { ErrorCode } from "../enums/error-code.enum.js";
 
 export const errorHandler = (
   err: Error,
@@ -24,6 +26,23 @@ export const errorHandler = (
     return res.status(HttpStatus.BAD_REQUEST).json({
       message: "Validation error",
       error: err.issues,
+      status: "error",
+    });
+  }
+
+  // jsonwebtoken throws its own error classes (not AppError) when a token is
+  // expired/malformed/not-yet-valid. Without this branch these fall through
+  // to the generic 500 below — and since authMiddleware runs on every
+  // protected route, an expired session would 500 on every single request
+  // instead of cleanly prompting a re-login.
+  if (
+    err instanceof TokenExpiredError ||
+    err instanceof JsonWebTokenError ||
+    err instanceof NotBeforeError
+  ) {
+    return res.status(HttpStatus.UNAUTHORIZED).json({
+      message: err instanceof TokenExpiredError ? "jwt expired" : "jwt malformed",
+      error: ErrorCode.AUTH_UNAUTHORIZED_ACCESS,
       status: "error",
     });
   }
