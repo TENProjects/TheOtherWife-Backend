@@ -1,7 +1,7 @@
 /** @format */
 
 import z from "zod";
-import { TokenExpiredError, JsonWebTokenError, NotBeforeError } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/app.error.js";
@@ -36,12 +36,12 @@ export const errorHandler = (
   // protected route, an expired session would 500 on every single request
   // instead of cleanly prompting a re-login.
   if (
-    err instanceof TokenExpiredError ||
-    err instanceof JsonWebTokenError ||
-    err instanceof NotBeforeError
+    err instanceof jwt.TokenExpiredError ||
+    err instanceof jwt.JsonWebTokenError ||
+    err instanceof jwt.NotBeforeError
   ) {
     return res.status(HttpStatus.UNAUTHORIZED).json({
-      message: err instanceof TokenExpiredError ? "jwt expired" : "jwt malformed",
+      message: err instanceof jwt.TokenExpiredError ? "jwt expired" : "jwt malformed",
       error: ErrorCode.AUTH_UNAUTHORIZED_ACCESS,
       status: "error",
     });
