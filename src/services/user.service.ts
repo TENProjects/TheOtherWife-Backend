@@ -769,14 +769,32 @@ export class UserService {
       // Scoped by `orderSummaryPeriod` (today/week/month/all) — defaults to
       // all-time when omitted. orderCategories above is always all-time.
       orderSummary: this.buildOrderSummary(periodStatusBreakdown),
-      revenueTrend: revenueByMonth.map((entry) => {
-        const monthKey = `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`;
-        return {
-          month: monthKey,
-          revenue: entry.revenue,
-          profit: entry.commission - (paystackCostByMonthKey.get(monthKey) ?? 0),
-        };
-      }),
+      // Zero-filled across all 6 calendar months (not just months with paid
+      // orders) so the trend line always renders as a real line — a dataset
+      // with revenue in only one month would otherwise produce a single
+      // point, which Recharts can't connect into a line.
+      revenueTrend: (() => {
+        const revenueByMonthKey = new Map(
+          revenueByMonth.map((entry) => [
+            `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`,
+            entry,
+          ]),
+        );
+        const months: { month: string; revenue: number; profit: number }[] = [];
+        for (let i = 5; i >= 0; i--) {
+          const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+          const entry = revenueByMonthKey.get(monthKey);
+          months.push({
+            month: monthKey,
+            revenue: entry?.revenue ?? 0,
+            profit: entry
+              ? entry.commission - (paystackCostByMonthKey.get(monthKey) ?? 0)
+              : 0,
+          });
+        }
+        return months;
+      })(),
       trendingMenus: trendingThisMonth.map((entry) => ({
         name: entry._id,
         orders: entry.orders,
