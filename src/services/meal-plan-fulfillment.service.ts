@@ -12,6 +12,7 @@ import { transaction } from "../util/transaction.util.js";
 import { combineDateAndTime } from "../util/meal-plan-recurrence.util.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
 import { VendorWalletService } from "./vendor-wallet.service.js";
+import { PaymentLedgerService } from "./payment-ledger.service.js";
 
 // How far ahead of a scheduled meal's delivery window it turns into a real,
 // vendor-visible Order — the vendor then Accepts/Mark-Readys/Delivers it
@@ -34,9 +35,11 @@ export const EFFECTIVE_LEAD_HOURS = Math.max(
 
 export class MealPlanFulfillmentService {
   private vendorWalletService: VendorWalletService;
+  private paymentLedgerService: PaymentLedgerService;
 
   constructor() {
     this.vendorWalletService = new VendorWalletService();
+    this.paymentLedgerService = new PaymentLedgerService();
   }
 
   // Converts one due ScheduledMeal into a real Order + Payment pair so it
@@ -136,10 +139,22 @@ export class MealPlanFulfillmentService {
         { session },
       );
 
-      await this.vendorWalletService.syncPaymentSettlementFromOrder(
+      const syncedPayment = await this.vendorWalletService.syncPaymentSettlementFromOrder(
         session,
         payment._id.toString(),
       );
+
+      await this.paymentLedgerService.record(session, {
+        payment: syncedPayment,
+        entryType: "payment_succeeded",
+        amount: syncedPayment.amount,
+        actorType: "system",
+        metadata: {
+          sourceMealPlanId: plan._id.toString(),
+          scheduledMealId: freshScheduledMeal._id.toString(),
+          note: "money already collected via the plan's batch payment — this record mirrors it for vendor settlement/refund parity",
+        },
+      });
 
       freshScheduledMeal.orderId = order._id;
       await freshScheduledMeal.save({ session });

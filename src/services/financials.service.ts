@@ -10,8 +10,33 @@ import RefundRequest from "../models/refundRequest.model.js";
 import VendorPayoutRequest from "../models/vendorPayoutRequest.model.js";
 import FinancialSettings from "../models/financialSettings.model.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
+import { PaymentLedgerService } from "./payment-ledger.service.js";
 
 export class FinancialsService {
+  private paymentLedgerService = new PaymentLedgerService();
+
+  // Full, ordered audit trail for one payment — every recorded state
+  // transition and money movement, oldest first.
+  getPaymentLedger = async (paymentId: string) => {
+    const payment = await Payment.findById(paymentId);
+    if (!payment) {
+      throw new NotFoundException(
+        "Payment not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+    const entries = await this.paymentLedgerService.getEntriesForPayment(paymentId);
+    return { payment, entries };
+  };
+
+  // Walks the entire ledger and recomputes every hash to confirm the chain
+  // hasn't been altered — see PaymentLedgerService.verifyChainIntegrity for
+  // what this actually checks.
+  verifyLedgerIntegrity = async () => {
+    return this.paymentLedgerService.verifyChainIntegrity();
+  };
+
   private percentChange = (current: number, previous: number): number => {
     if (previous === 0) return current === 0 ? 0 : 100;
     return Math.round(((current - previous) / previous) * 100);

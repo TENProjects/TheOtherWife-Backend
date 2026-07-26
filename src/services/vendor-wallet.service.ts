@@ -14,6 +14,7 @@ import VendorClawback from "../models/vendorClawback.model.js";
 import FinancialSettings from "../models/financialSettings.model.js";
 import { transaction } from "../util/transaction.util.js";
 import { PaystackSubaccountService } from "./paystack-subaccount.service.js";
+import { PaymentLedgerService } from "./payment-ledger.service.js";
 
 type MarkPaidAllocationInput = {
   paymentId: string;
@@ -23,9 +24,11 @@ type AdminPayoutStatus = "requested" | "processing" | "approved" | "rejected";
 
 export class VendorWalletService {
   private paystackSubaccountService: PaystackSubaccountService;
+  private paymentLedgerService: PaymentLedgerService;
 
   constructor() {
     this.paystackSubaccountService = new PaystackSubaccountService();
+    this.paymentLedgerService = new PaymentLedgerService();
   }
 
   private getVendorByUserId = async (userId: string, session?: ClientSession) => {
@@ -155,6 +158,14 @@ export class VendorWalletService {
 
     payment.vendorClawbackAmount += clawbackAmount;
     await payment.save({ session });
+
+    await this.paymentLedgerService.record(session, {
+      payment,
+      entryType: "vendor_clawback_applied",
+      amount: clawbackAmount,
+      actorType: "system",
+      metadata: { reason, alreadySettled, scenario: "A_automatic_vendor_reject" },
+    });
 
     await VendorClawback.create(
       [
@@ -681,6 +692,18 @@ export class VendorWalletService {
               payment.settlementStatus = "paid";
             }
             await payment.save({ session });
+
+            await this.paymentLedgerService.record(session, {
+              payment,
+              entryType: "vendor_payout_allocated",
+              amount: allocation.amount,
+              actorType: "admin",
+              actorId: currentAdminUserId,
+              metadata: {
+                payoutRequestId: (payoutRequest._id as mongoose.Types.ObjectId).toString(),
+                payoutReference: payload.payoutReference,
+              },
+            });
 
             allocationDocs.push({
               payoutRequestId: payoutRequest._id,

@@ -472,6 +472,52 @@ import { requireAdminRole } from "../middlewares/require-admin-role.middleware.j
  *         description: Forbidden
  */
 
+/**
+ * @swagger
+ * /api/v1/admin/financials/payments/{paymentId}/ledger:
+ *   get:
+ *     summary: Full audit trail for one payment (admin)
+ *     description: >-
+ *       Every recorded state transition and money movement for this
+ *       payment, oldest first — the append-only ledger, not just the
+ *       payment's current mutable fields.
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: paymentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       "200":
+ *         description: Payment ledger fetched successfully
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ *       "404":
+ *         description: Not found
+ */
+
+/**
+ * @swagger
+ * /api/v1/admin/financials/ledger/verify:
+ *   get:
+ *     summary: Verify the payment ledger's hash-chain integrity (admin)
+ *     description: >-
+ *       Recomputes every entry's hash and confirms the chain hasn't been
+ *       altered — detects tampering even if it happened directly against
+ *       the database, bypassing the application entirely.
+ *     tags: [Admin]
+ *     responses:
+ *       "200":
+ *         description: Verification completed (check `data.valid`)
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+
 class AdminFinancialsRouter {
   private financialsController: FinancialsController;
   router: Router;
@@ -491,6 +537,14 @@ class AdminFinancialsRouter {
   initializeRoutes() {
     this.router.get("/summary", this.financialsController.getSummary);
     this.router.get("/analytics", this.financialsController.getAnalytics);
+    this.router.get(
+      "/payments/:paymentId/ledger",
+      this.financialsController.getPaymentLedger,
+    );
+    this.router.get(
+      "/ledger/verify",
+      this.financialsController.verifyLedgerIntegrity,
+    );
     this.router.get(
       "/net-profit-summary",
       this.financialsController.getNetProfitSummary,

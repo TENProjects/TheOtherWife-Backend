@@ -11,12 +11,15 @@ import Payment from "../models/payment.model.js";
 import RefundRequest from "../models/refundRequest.model.js";
 import { transaction } from "../util/transaction.util.js";
 import { WalletService } from "./wallet.service.js";
+import { PaymentLedgerService } from "./payment-ledger.service.js";
 
 export class RefundService {
   private walletService: WalletService;
+  private paymentLedgerService: PaymentLedgerService;
 
   constructor() {
     this.walletService = new WalletService();
+    this.paymentLedgerService = new PaymentLedgerService();
   }
 
   createRefundRequest = async (
@@ -182,11 +185,30 @@ export class RefundService {
         order.paymentStatus = "refunded";
         await order.save({ session });
 
-        await Payment.findOneAndUpdate(
+        const paymentBeforeRefund = await Payment.findOne(
+          { orderId: refundRequest.orderId },
+        ).session(session);
+        const refundedPayment = await Payment.findOneAndUpdate(
           { orderId: refundRequest.orderId },
           { $set: { status: "refunded" } },
-          { session },
+          { session, new: true },
         );
+
+        if (refundedPayment) {
+          await this.paymentLedgerService.record(session, {
+            payment: refundedPayment,
+            entryType: "payment_refunded",
+            amount: finalAmount,
+            previousStatus: paymentBeforeRefund?.status,
+            actorType: "admin",
+            actorId: adminUserId,
+            metadata: {
+              refundRequestId: (refundRequest._id as mongoose.Types.ObjectId).toString(),
+              reason: refundRequest.reason,
+              scenario: "B_admin_dispute",
+            },
+          });
+        }
 
         await this.walletService.creditWalletForRefund(
           session,

@@ -18,15 +18,18 @@ import {
   generateDeliveryDates,
 } from "../util/meal-plan-recurrence.util.js";
 import { PaymentService } from "./payment.service.js";
+import { PaymentLedgerService } from "./payment-ledger.service.js";
 
 const EDIT_CUTOFF_HOURS = 12;
 const MONTHLY_DISCOUNT_RATE = 0.1;
 
 export class MealPlanService {
   private paymentService: PaymentService;
+  private paymentLedgerService: PaymentLedgerService;
 
   constructor() {
     this.paymentService = new PaymentService();
+    this.paymentLedgerService = new PaymentLedgerService();
   }
 
   private ensureEditableWindow = (
@@ -356,6 +359,14 @@ export class MealPlanService {
           { session },
         );
 
+        await this.paymentLedgerService.record(session, {
+          payment: newPayment,
+          entryType: "payment_created",
+          amount: newPayment.amount,
+          actorType: "customer",
+          actorId: userId,
+        });
+
         await ScheduledMeal.updateMany(
           { _id: { $in: insertedScheduledMeals.map((m) => m._id) } },
           { $set: { paymentId: newPayment._id } },
@@ -387,6 +398,16 @@ export class MealPlanService {
         { $set: { status: "succeeded", paidAt } },
         { new: true },
       );
+      if (updatedPayment) {
+        await this.paymentLedgerService.record(undefined, {
+          payment: updatedPayment,
+          entryType: "payment_succeeded",
+          amount: updatedPayment.amount,
+          previousStatus: payment.status,
+          actorType: "system",
+          metadata: { freeBatch: true },
+        });
+      }
       await ScheduledMeal.updateMany(
         { paymentId: payment._id },
         { $set: { paymentStatus: "succeeded" } },
@@ -416,15 +437,35 @@ export class MealPlanService {
         { new: true },
       );
 
+      if (updatedPayment) {
+        await this.paymentLedgerService.record(undefined, {
+          payment: updatedPayment,
+          entryType: "payment_initiated",
+          amount: 0,
+          previousStatus: payment.status,
+          actorType: "system",
+        });
+      }
+
       return { plan, scheduledMeals, payment: updatedPayment };
     } catch (error) {
-      await Promise.all([
-        Payment.findByIdAndUpdate(payment._id, { $set: { status: "failed" } }),
+      const [failedPayment] = await Promise.all([
+        Payment.findByIdAndUpdate(payment._id, { $set: { status: "failed" } }, { new: true }),
         ScheduledMeal.updateMany(
           { paymentId: payment._id },
           { $set: { paymentStatus: "failed" } },
         ),
       ]);
+      if (failedPayment) {
+        await this.paymentLedgerService.record(undefined, {
+          payment: failedPayment,
+          entryType: "payment_failed",
+          amount: 0,
+          previousStatus: payment.status,
+          actorType: "system",
+          metadata: { reason: "paystack_initialization_error" },
+        });
+      }
       throw error;
     }
   };

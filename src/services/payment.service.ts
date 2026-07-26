@@ -21,6 +21,7 @@ import { PromoService } from "./promo.service.js";
 import { WalletService } from "./wallet.service.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
 import { VendorWalletService } from "./vendor-wallet.service.js";
+import { PaymentLedgerService } from "./payment-ledger.service.js";
 
 type InitializePaystackInput = {
   email: string;
@@ -47,11 +48,13 @@ export class PaymentService {
   private promoService: PromoService;
   private walletService: WalletService;
   private vendorWalletService: VendorWalletService;
+  private paymentLedgerService: PaymentLedgerService;
 
   constructor() {
     this.promoService = new PromoService();
     this.walletService = new WalletService();
     this.vendorWalletService = new VendorWalletService();
+    this.paymentLedgerService = new PaymentLedgerService();
   }
 
   initializePaystackPayment = async (
@@ -218,6 +221,7 @@ export class PaymentService {
             return { handled: true, payment: paymentRecord };
           }
 
+          const previousStatus = paymentRecord.status;
           paymentRecord.status = "failed";
           paymentRecord.providerPayload = providerPayload;
           await paymentRecord.save({ session });
@@ -243,10 +247,19 @@ export class PaymentService {
             order._id.toString(),
           );
 
-          await this.vendorWalletService.syncPaymentSettlementFromOrder(
+          const syncedPayment = await this.vendorWalletService.syncPaymentSettlementFromOrder(
             session,
             paymentRecord._id.toString(),
           );
+
+          await this.paymentLedgerService.record(session, {
+            payment: syncedPayment,
+            entryType: "payment_failed",
+            amount: 0,
+            previousStatus,
+            actorType: "webhook",
+            metadata: { paystackEvent: "charge.failed" },
+          });
 
           return { handled: true, payment: paymentRecord, order };
         },
@@ -295,6 +308,7 @@ export class PaymentService {
           return { handled: true, payment: paymentRecord };
         }
 
+        const previousStatus = paymentRecord.status;
         paymentRecord.status = "succeeded";
         paymentRecord.providerTransactionId = String(providerPayload.id ?? "");
         paymentRecord.providerPayload = providerPayload;
@@ -350,6 +364,15 @@ export class PaymentService {
           paymentRecord._id.toString(),
         );
 
+        await this.paymentLedgerService.record(session, {
+          payment: syncedPayment,
+          entryType: "payment_succeeded",
+          amount: paidAmount,
+          previousStatus,
+          actorType: "webhook",
+          metadata: { paystackEvent: event.event, reference: paymentRecord.reference },
+        });
+
         // Section 3.2 — when this charge was split, Paystack already
         // deposited the vendor's 80% cut directly to their bank account at
         // charge time. Mark it settled immediately so it never shows up as
@@ -359,6 +382,14 @@ export class PaymentService {
           syncedPayment.vendorSettledAmount = syncedPayment.vendorNetAmount;
           syncedPayment.settlementStatus = "paid";
           await syncedPayment.save({ session });
+
+          await this.paymentLedgerService.record(session, {
+            payment: syncedPayment,
+            entryType: "vendor_split_settled",
+            amount: syncedPayment.vendorNetAmount,
+            actorType: "webhook",
+            metadata: { reason: "paystack_subaccount_split" },
+          });
         }
 
         return { handled: true, payment: paymentRecord, order };
@@ -408,6 +439,7 @@ export class PaymentService {
             return { handled: true, payment: paymentRecord };
           }
 
+          const previousStatus = paymentRecord.status;
           paymentRecord.status = "failed";
           paymentRecord.providerPayload = providerPayload;
           await paymentRecord.save({ session });
@@ -417,6 +449,15 @@ export class PaymentService {
             { $set: { paymentStatus: "failed" } },
             { session },
           );
+
+          await this.paymentLedgerService.record(session, {
+            payment: paymentRecord,
+            entryType: "payment_failed",
+            amount: 0,
+            previousStatus,
+            actorType: "webhook",
+            metadata: { paystackEvent: "charge.failed", context: "meal_plan" },
+          });
 
           return { handled: true, payment: paymentRecord };
         },
@@ -455,6 +496,7 @@ export class PaymentService {
           return { handled: true, payment: paymentRecord };
         }
 
+        const previousStatus = paymentRecord.status;
         paymentRecord.status = "succeeded";
         paymentRecord.providerTransactionId = String(providerPayload.id ?? "");
         paymentRecord.providerPayload = providerPayload;
@@ -468,6 +510,15 @@ export class PaymentService {
           { $set: { paymentStatus: "succeeded" } },
           { session },
         );
+
+        await this.paymentLedgerService.record(session, {
+          payment: paymentRecord,
+          entryType: "payment_succeeded",
+          amount: paidAmount,
+          previousStatus,
+          actorType: "webhook",
+          metadata: { paystackEvent: event.event, context: "meal_plan", reference: paymentRecord.reference },
+        });
 
         return { handled: true, payment: paymentRecord };
       },

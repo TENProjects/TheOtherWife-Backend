@@ -36,6 +36,30 @@ export class FinancialsController {
     },
   );
 
+  getPaymentLedger = handleAsyncControl(
+    async (req: Request<{ paymentId: string }>, res: Response): Promise<Response> => {
+      const result = await this.financialsService.getPaymentLedger(req.params.paymentId);
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Payment ledger fetched successfully",
+        data: result,
+      } as ApiResponse);
+    },
+  );
+
+  verifyLedgerIntegrity = handleAsyncControl(
+    async (_req: Request, res: Response): Promise<Response> => {
+      const result = await this.financialsService.verifyLedgerIntegrity();
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: result.valid
+          ? "Ledger chain is intact — no tampering detected"
+          : "Ledger chain integrity check FAILED — see details",
+        data: result,
+      } as ApiResponse);
+    },
+  );
+
   getPaymentGateways = handleAsyncControl(
     async (_req: Request, res: Response): Promise<Response> => {
       const gateways = await this.financialsService.getPaymentGateways();

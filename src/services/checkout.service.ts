@@ -18,6 +18,7 @@ import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { transaction } from "../util/transaction.util.js";
 import { PaymentService } from "./payment.service.js";
+import { PaymentLedgerService } from "./payment-ledger.service.js";
 import { PromoCodeService } from "./promo-code.service.js";
 import { isVendorReceivingOrders } from "../util/vendor-opening-hours.util.js";
 import { WalletService } from "./wallet.service.js";
@@ -97,6 +98,7 @@ export class CheckoutService {
   private paymentService: PaymentService;
   private walletService: WalletService;
   private promoCodeService: PromoCodeService;
+  private paymentLedgerService: PaymentLedgerService;
   private readonly serviceChargeThreshold = 15000;
   private readonly serviceChargeRateBelowThreshold = 0.049;
   private readonly serviceChargeRateAtOrAboveThreshold = 0.029;
@@ -105,6 +107,7 @@ export class CheckoutService {
     this.paymentService = new PaymentService();
     this.walletService = new WalletService();
     this.promoCodeService = new PromoCodeService();
+    this.paymentLedgerService = new PaymentLedgerService();
   }
 
   private calculateServiceCharge = (effectiveSubtotal: number) => {
@@ -517,6 +520,14 @@ export class CheckoutService {
           { session },
         );
 
+        await this.paymentLedgerService.record(session, {
+          payment: newPayment,
+          entryType: "payment_created",
+          amount: newPayment.amount,
+          actorType: "customer",
+          actorId: currentCustomerId,
+        });
+
         const previewResult = {
           cartId: checkoutContext.cart._id.toString(),
           cartUpdatedAt: checkoutContext.cart.updatedAt.toISOString(),
@@ -626,6 +637,7 @@ export class CheckoutService {
           orderRecord.paidAt = paidAt;
           await orderRecord.save({ session });
 
+          const previousStatus = paymentRecord.status;
           paymentRecord.status = "succeeded";
           paymentRecord.paidAt = paidAt;
           paymentRecord.settlementStatus = "unsettled";
@@ -635,6 +647,15 @@ export class CheckoutService {
             walletOnly: true,
           };
           await paymentRecord.save({ session });
+
+          await this.paymentLedgerService.record(session, {
+            payment: paymentRecord,
+            entryType: "payment_succeeded",
+            amount: paymentRecord.amount,
+            previousStatus,
+            actorType: "system",
+            metadata: { walletOnly: true },
+          });
 
           await this.walletService.finalizeReservedWalletForOrder(
             session,
@@ -702,6 +723,16 @@ export class CheckoutService {
         { new: true },
       );
 
+      if (updatedPayment) {
+        await this.paymentLedgerService.record(undefined, {
+          payment: updatedPayment,
+          entryType: "payment_initiated",
+          amount: 0,
+          previousStatus: payment.status,
+          actorType: "system",
+        });
+      }
+
       return {
         order,
         payment: updatedPayment,
@@ -715,14 +746,7 @@ export class CheckoutService {
           paymentId: string,
           currentCustomerId: string,
         ) => {
-          await Promise.all([
-            Payment.findByIdAndUpdate(
-              paymentId,
-              {
-                $set: { status: "failed" },
-              },
-              { session },
-            ),
+          const [, failedPayment] = await Promise.all([
             Order.findByIdAndUpdate(
               orderId,
               {
@@ -734,7 +758,25 @@ export class CheckoutService {
               },
               { session },
             ),
+            Payment.findByIdAndUpdate(
+              paymentId,
+              {
+                $set: { status: "failed" },
+              },
+              { session, new: true },
+            ),
           ]);
+
+          if (failedPayment) {
+            await this.paymentLedgerService.record(session, {
+              payment: failedPayment,
+              entryType: "payment_failed",
+              amount: 0,
+              previousStatus: payment.status,
+              actorType: "system",
+              metadata: { reason: "paystack_initialization_error" },
+            });
+          }
 
           await this.walletService.releaseReservedWalletForOrder(
             session,
