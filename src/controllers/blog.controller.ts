@@ -51,6 +51,7 @@ export class BlogController {
         {},
         {
           title: string;
+          category?: string;
           featuredImageUrl?: string;
           content: string;
           quote?: string;
@@ -90,6 +91,7 @@ export class BlogController {
         {},
         {
           title?: string;
+          category?: string;
           featuredImageUrl?: string;
           content?: string;
           quote?: string;

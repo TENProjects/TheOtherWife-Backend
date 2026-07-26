@@ -39,12 +39,20 @@ import { BlogController } from "../controllers/blog.controller.js";
  *                           type: array
  *                           items:
  *                             type: object
+ *                             description: >-
+ *                               Shape matches the public blog's card-grid
+ *                               pattern (title/category/image/description),
+ *                               ready to plug into that page as-is.
  *                             properties:
  *                               title: { type: string }
  *                               slug: { type: string }
- *                               featuredImageUrl: { type: string, nullable: true }
- *                               quote: { type: string, nullable: true }
+ *                               category: { type: string }
+ *                               image: { type: string, nullable: true }
+ *                               description:
+ *                                 type: string
+ *                                 description: Plain-text excerpt derived from content (~160 chars)
  *                               author: { type: string }
+ *                               readTime: { type: string, example: "7 min read" }
  *                               views: { type: number }
  *                               publishedAt: { type: string, format: date-time }
  *                         pagination:
@@ -82,13 +90,19 @@ import { BlogController } from "../controllers/blog.controller.js";
  *                       properties:
  *                         post:
  *                           type: object
+ *                           description: >-
+ *                             Shape matches the public blog's article-page
+ *                             pattern (title/category/image/content/quote),
+ *                             ready to plug into that page as-is.
  *                           properties:
  *                             title: { type: string }
  *                             slug: { type: string }
- *                             featuredImageUrl: { type: string, nullable: true }
+ *                             category: { type: string }
+ *                             image: { type: string, nullable: true }
  *                             content: { type: string }
  *                             quote: { type: string, nullable: true }
  *                             author: { type: string }
+ *                             readTime: { type: string, example: "7 min read" }
  *                             views: { type: number }
  *                             publishedAt: { type: string, format: date-time }
  *       "404":

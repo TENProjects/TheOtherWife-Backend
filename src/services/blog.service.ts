@@ -102,7 +102,10 @@ export class BlogService {
           _id: postObject._id.toString(),
           title: postObject.title,
           slug: postObject.slug,
+          category: postObject.category,
           featuredImageUrl: postObject.featuredImageUrl ?? null,
+          content: postObject.content,
+          quote: postObject.quote ?? null,
           status: postObject.status,
           author: author
             ? `${author.firstName ?? ""} ${author.lastName ?? ""}`.trim()
@@ -148,6 +151,7 @@ export class BlogService {
     authorId: string,
     body: {
       title: string;
+      category?: string;
       featuredImageUrl?: string;
       content: string;
       quote?: string;
@@ -159,6 +163,7 @@ export class BlogService {
     const post = await BlogPost.create({
       title: body.title,
       slug,
+      category: body.category,
       featuredImageUrl: body.featuredImageUrl,
       content: body.content,
       quote: body.quote,
@@ -175,6 +180,7 @@ export class BlogService {
     postId: string,
     body: {
       title?: string;
+      category?: string;
       featuredImageUrl?: string;
       content?: string;
       quote?: string;
@@ -194,6 +200,9 @@ export class BlogService {
     if (body.title !== undefined && body.title !== post.title) {
       post.title = body.title;
       post.slug = await this.generateUniqueSlug(body.title, postId);
+    }
+    if (body.category !== undefined) {
+      post.category = body.category;
     }
     if (body.featuredImageUrl !== undefined) {
       post.featuredImageUrl = body.featuredImageUrl;
@@ -278,8 +287,28 @@ export class BlogService {
       ? `${author.firstName ?? ""} ${author.lastName ?? ""}`.trim()
       : "TheOtherWife Team";
 
+  // ~200 words/minute, matching the "X min read" badge shown on the public
+  // blog — derived from content rather than stored, so it never goes stale
+  // after an edit.
+  private estimateReadTime = (content: string): string => {
+    const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
+    const minutes = Math.max(1, Math.round(wordCount / 200));
+    return `${minutes} min read`;
+  };
+
+  // Plain-text teaser for the post-card grid — strips the excerpt to a clean
+  // word boundary rather than cutting mid-word.
+  private excerpt = (content: string, maxLength = 160): string => {
+    const plain = content.replace(/\s+/g, " ").trim();
+    if (plain.length <= maxLength) return plain;
+    const truncated = plain.slice(0, maxLength);
+    return `${truncated.slice(0, truncated.lastIndexOf(" "))}...`;
+  };
+
   // Public, unauthenticated — only ever returns published posts. Drafts and
-  // archived posts must never leak here.
+  // archived posts must never leak here. Shape matches the public blog's
+  // card-grid pattern (title/slug/category/image/description/author/
+  // readTime/publishedAt) so a frontend integration can consume it directly.
   getPublishedPosts = async (
     filters: { page?: number; limit?: number } = {},
   ) => {
@@ -292,7 +321,7 @@ export class BlogService {
     const [posts, total] = await Promise.all([
       BlogPost.find(query)
         .populate("authorId", "firstName lastName")
-        .select("title slug featuredImageUrl quote views publishedAt")
+        .select("title slug category featuredImageUrl content quote views publishedAt")
         .sort({ publishedAt: -1 })
         .skip((safePage - 1) * safeLimit)
         .limit(safeLimit),
@@ -305,9 +334,11 @@ export class BlogService {
         return {
           title: postObject.title,
           slug: postObject.slug,
-          featuredImageUrl: postObject.featuredImageUrl ?? null,
-          quote: postObject.quote ?? null,
+          category: postObject.category,
+          image: postObject.featuredImageUrl ?? null,
+          description: this.excerpt(postObject.content),
           author: this.formatAuthorName(postObject.authorId),
+          readTime: this.estimateReadTime(postObject.content),
           views: postObject.views,
           publishedAt: postObject.publishedAt,
         };
@@ -323,7 +354,8 @@ export class BlogService {
 
   // Public, unauthenticated. Increments the view counter on every fetch —
   // a simple counter with no dedup, matching the admin dashboard's
-  // "Total Views" stat.
+  // "Total Views" stat. Shape matches the public blog's article-page pattern
+  // (adds category/readTime/content on top of the list shape).
   getPublishedPostBySlug = async (slug: string) => {
     const post = await BlogPost.findOneAndUpdate(
       { slug, status: "published" },
@@ -345,10 +377,12 @@ export class BlogService {
       post: {
         title: postObject.title,
         slug: postObject.slug,
-        featuredImageUrl: postObject.featuredImageUrl ?? null,
+        category: postObject.category,
+        image: postObject.featuredImageUrl ?? null,
         content: postObject.content,
         quote: postObject.quote ?? null,
         author: this.formatAuthorName(postObject.authorId),
+        readTime: this.estimateReadTime(postObject.content),
         views: postObject.views,
         publishedAt: postObject.publishedAt,
       },

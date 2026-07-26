@@ -4,6 +4,7 @@ import z from "zod";
 
 export const createBlogPostSchema = z.object({
   title: z.string().trim().min(1),
+  category: z.string().trim().min(1).max(60).optional(),
   featuredImageUrl: z.string().trim().optional(),
   content: z.string().trim().min(1),
   quote: z.string().trim().max(500).optional(),
@@ -13,6 +14,7 @@ export const createBlogPostSchema = z.object({
 export const updateBlogPostSchema = z
   .object({
     title: z.string().trim().min(1).optional(),
+    category: z.string().trim().min(1).max(60).optional(),
     featuredImageUrl: z.string().trim().optional(),
     content: z.string().trim().min(1).optional(),
     quote: z.string().trim().max(500).optional(),

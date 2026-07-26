@@ -7,6 +7,9 @@ export type BlogPostStatus = "draft" | "published" | "archived";
 export interface BlogPostDocument extends Document {
   title: string;
   slug: string;
+  // Shown as the category pill on the public blog (theotherwife.com/blog) —
+  // free text rather than an enum since the website has no fixed taxonomy.
+  category: string;
   featuredImageUrl?: string;
   content: string;
   quote?: string;
@@ -28,6 +31,12 @@ const BlogPostSchema = new Schema(
       required: true,
       unique: true,
       index: true,
+    },
+    category: {
+      type: String,
+      required: true,
+      trim: true,
+      default: "Food & Culture",
     },
     featuredImageUrl: {
       type: String,

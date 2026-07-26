@@ -67,7 +67,10 @@ import {
  *                               _id: { type: string }
  *                               title: { type: string }
  *                               slug: { type: string }
+ *                               category: { type: string }
  *                               featuredImageUrl: { type: string, nullable: true }
+ *                               content: { type: string }
+ *                               quote: { type: string, nullable: true }
  *                               status: { type: string, enum: [draft, published, archived] }
  *                               author: { type: string }
  *                               views: { type: number }
@@ -99,6 +102,7 @@ import {
  *             required: [title, content, status]
  *             properties:
  *               title: { type: string }
+ *               category: { type: string, maxLength: 60, description: "Defaults to \"Food & Culture\" if omitted" }
  *               featuredImageUrl: { type: string }
  *               featuredImage: { type: string, format: binary }
  *               content: { type: string }
@@ -156,6 +160,7 @@ import {
  *             type: object
  *             properties:
  *               title: { type: string }
+ *               category: { type: string, maxLength: 60 }
  *               featuredImageUrl: { type: string }
  *               featuredImage: { type: string, format: binary }
  *               content: { type: string }
