@@ -191,16 +191,26 @@ class CartBase {
       );
     }
 
+    // Removing/decrementing an item already in the cart must never depend on
+    // the meal still being purchasable — a vendor pausing, unpublishing, or
+    // selling out a meal after it was added shouldn't leave it stuck in the
+    // customer's cart forever. Only add/increment (which need a price and a
+    // vendor to actually add stock) require the meal to currently be live.
+    const requiresPurchasable =
+      action === CartActions.add || action === CartActions.increment;
+
     const meal = await Meal.findOne({
       _id: mealId,
-      isDeleted: false,
-      publicationStatus: "published",
-      isAvailable: true,
+      ...(requiresPurchasable
+        ? { isDeleted: false, publicationStatus: "published", isAvailable: true }
+        : {}),
     }).session(session);
 
     if (!meal) {
       throw new NotFoundException(
-        "Meal not found",
+        requiresPurchasable
+          ? "Meal not found"
+          : "Meal not found in cart",
         HttpStatus.NOT_FOUND,
         ErrorCode.RESOURCE_NOT_FOUND,
       );
