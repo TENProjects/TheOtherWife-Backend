@@ -9,6 +9,7 @@ import cors from "cors";
 
 import { errorHandler } from "./src/middlewares/error-handler.middleware.js";
 import { sanitizeQueryAndParams } from "./src/middlewares/sanitize-query.middleware.js";
+import { initializeSocket } from "./src/realtime/socket.js";
 
 import { corsOrigin, hostName, port } from "./src/constants/env.js";
 import { Db } from "./src/config/db.config.js";
@@ -205,9 +206,14 @@ export class App {
 
   async startServer() {
     await this.initializeDb();
-    this.app.listen(port, () => {
+    const server = this.app.listen(port, () => {
       console.log(`Server is running on ${hostName}:${port}`);
     });
+    // Requires a persistent process (not Vercel's serverless functions) —
+    // Socket.IO needs a long-lived HTTP server to hold WebSocket
+    // connections open, which only exists once this actually calls
+    // .listen() (i.e. running as a real server, e.g. on DigitalOcean).
+    initializeSocket(server);
   }
 }
 

@@ -33,7 +33,11 @@ export interface SupportTicketInternalNote {
 
 export interface SupportTicketDocument extends Document {
   ticketNumber: string;
-  customerId: mongoose.Types.ObjectId;
+  // Optional — a ticket originates from either a customer (customerId set)
+  // or a vendor (vendorId set as the raiser, no customerId). vendorId alone
+  // is ambiguous between these two cases; see messages[0].senderType to
+  // disambiguate who actually opened the ticket.
+  customerId?: mongoose.Types.ObjectId;
   vendorId?: mongoose.Types.ObjectId;
   orderId?: mongoose.Types.ObjectId;
   subject: string;
@@ -92,7 +96,7 @@ const SupportTicketSchema = new Schema(
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
       index: true,
     },
     vendorId: {

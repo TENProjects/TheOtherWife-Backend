@@ -12,6 +12,7 @@ import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { nextSequence } from "../util/counter.util.js";
 import { NotificationService } from "./notification.service.js";
+import { emitTicketMessage } from "../realtime/socket.js";
 
 type Pagination = { page?: number; limit?: number };
 
@@ -53,7 +54,7 @@ export class SupportTicketService {
   ) => {
     const notifications: Promise<unknown>[] = [];
 
-    if (excludeSenderType !== "customer") {
+    if (excludeSenderType !== "customer" && ticket.customerId) {
       notifications.push(
         this.notificationService.create({
           recipientUserId: ticket.customerId.toString(),
@@ -230,20 +231,70 @@ export class SupportTicketService {
     }
     this.assertNotClosed(ticket);
 
-    ticket.messages.push({
-      senderType: "customer",
+    const newMessage = {
+      senderType: "customer" as const,
       senderId: customer._id as any,
       senderName: `${customer.firstName} ${customer.lastName}`.trim(),
       message,
       createdAt: new Date(),
-    });
+    };
+    ticket.messages.push(newMessage);
     await ticket.save();
     await this.notifyOnReply(ticket, "customer");
+    emitTicketMessage(ticketId, newMessage);
 
     return omitInternalNotes(ticket);
   };
 
   // ── Vendor-facing ────────────────────────────────────────────────────
+
+  createVendorTicket = async (
+    vendorUserId: string,
+    body: {
+      subject: string;
+      category?: string;
+      message: string;
+      orderId?: string;
+    },
+  ) => {
+    const vendor = await this.getVendorByUserId(vendorUserId);
+
+    if (body.orderId) {
+      const order = await Order.findOne({
+        _id: body.orderId,
+        vendorId: vendor._id,
+      });
+      if (!order) {
+        throw new NotFoundException(
+          "Order not found",
+          HttpStatus.NOT_FOUND,
+          ErrorCode.RESOURCE_NOT_FOUND,
+        );
+      }
+    }
+
+    const seq = await nextSequence("supportTicket");
+    const ticketNumber = `T${String(seq).padStart(3, "0")}`;
+
+    const ticket = await SupportTicket.create({
+      ticketNumber,
+      vendorId: vendor._id,
+      orderId: body.orderId,
+      subject: body.subject,
+      category: body.category ?? "other",
+      messages: [
+        {
+          senderType: "vendor",
+          senderId: vendorUserId,
+          senderName: vendor.businessName || "Vendor",
+          message: body.message,
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    return omitInternalNotes(ticket);
+  };
 
   getVendorTickets = async (vendorUserId: string, pagination: Pagination) => {
     const vendor = await this.getVendorByUserId(vendorUserId);
@@ -305,15 +356,17 @@ export class SupportTicketService {
     }
     this.assertNotClosed(ticket);
 
-    ticket.messages.push({
-      senderType: "vendor",
+    const newMessage = {
+      senderType: "vendor" as const,
       senderId: vendorUserId as any,
       senderName: vendor.businessName || "Vendor",
       message,
       createdAt: new Date(),
-    });
+    };
+    ticket.messages.push(newMessage);
     await ticket.save();
     await this.notifyOnReply(ticket, "vendor");
+    emitTicketMessage(ticketId, newMessage);
 
     return omitInternalNotes(ticket);
   };
@@ -401,15 +454,17 @@ export class SupportTicketService {
     }
     this.assertNotClosed(ticket);
 
-    ticket.messages.push({
-      senderType: "admin",
+    const newMessage = {
+      senderType: "admin" as const,
       senderId: admin._id as any,
       senderName: `${admin.firstName} ${admin.lastName}`.trim(),
       message,
       createdAt: new Date(),
-    });
+    };
+    ticket.messages.push(newMessage);
     await ticket.save();
     await this.notifyOnReply(ticket, "admin");
+    emitTicketMessage(ticketId, newMessage);
 
     return ticket;
   };

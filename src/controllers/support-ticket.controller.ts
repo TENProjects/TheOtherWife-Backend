@@ -82,6 +82,20 @@ export class SupportTicketController {
 
   // ── Vendor ───────────────────────────────────────────────────────────
 
+  createAsVendor = handleAsyncControl(async (req: Request, res: Response) => {
+    const vendorUserId = req.user?._id as unknown as string;
+    const ticket = await this.supportTicketService.createVendorTicket(
+      vendorUserId,
+      req.body,
+    );
+
+    return res.status(HttpStatus.CREATED).json({
+      status: "ok",
+      message: "Support ticket created successfully",
+      data: { ticket },
+    } as ApiResponse);
+  });
+
   getVendorTickets = handleAsyncControl(async (req: Request, res: Response) => {
     const vendorUserId = req.user?._id as unknown as string;
     const { page, limit } = req.query;

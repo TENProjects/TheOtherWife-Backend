@@ -5,11 +5,38 @@ import { SupportTicketController } from "../controllers/support-ticket.controlle
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
 import { zodValidation } from "../middlewares/validation.js";
-import { replyToSupportTicketSchema } from "../zod-schema/support-ticket.schema.js";
+import {
+  createSupportTicketSchema,
+  replyToSupportTicketSchema,
+} from "../zod-schema/support-ticket.schema.js";
 
 /**
  * @swagger
  * /api/v1/vendor/support-tickets:
+ *   post:
+ *     summary: Create a new support ticket, raised by the current vendor
+ *     tags: [Support Tickets]
+ *     security:
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [subject, message]
+ *             properties:
+ *               subject: { type: string }
+ *               category:
+ *                 type: string
+ *                 enum: [order_issue, payment_issue, delivery_issue, food_quality, account_issue, other]
+ *               message: { type: string }
+ *               orderId:
+ *                 type: string
+ *                 description: If provided, must belong to the current vendor
+ *     responses:
+ *       "201":
+ *         description: Support ticket created successfully
  *   get:
  *     summary: List support tickets tied to the current vendor
  *     tags: [Support Tickets]
@@ -82,6 +109,11 @@ class VendorSupportTicketRouter {
   }
 
   initializeRoutes() {
+    this.router.post(
+      "/",
+      zodValidation(createSupportTicketSchema),
+      this.controller.createAsVendor,
+    );
     this.router.get("/", this.controller.getVendorTickets);
     this.router.get("/:id", this.controller.getVendorTicketById);
     this.router.post(
