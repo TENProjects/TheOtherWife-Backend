@@ -48,14 +48,47 @@ export class FinancialsController {
   );
 
   verifyLedgerIntegrity = handleAsyncControl(
-    async (_req: Request, res: Response): Promise<Response> => {
-      const result = await this.financialsService.verifyLedgerIntegrity();
+    async (req: Request, res: Response): Promise<Response> => {
+      const { checkpointSequence, checkpointHash } = req.query;
+
+      let trustedCheckpoint: { sequenceNumber: number; entryHash: string } | undefined;
+      if (checkpointSequence && checkpointHash) {
+        trustedCheckpoint = {
+          sequenceNumber: Number(checkpointSequence),
+          entryHash: String(checkpointHash),
+        };
+      }
+
+      const result = await this.financialsService.verifyLedgerIntegrity(trustedCheckpoint);
       return res.status(HttpStatus.OK).json({
         status: "ok",
         message: result.valid
           ? "Ledger chain is intact — no tampering detected"
           : "Ledger chain integrity check FAILED — see details",
         data: result,
+      } as ApiResponse);
+    },
+  );
+
+  emitLedgerCheckpoint = handleAsyncControl(
+    async (req: Request, res: Response): Promise<Response> => {
+      const checkpoint = await this.financialsService.emitLedgerCheckpoint();
+      const adminUserId = req?.user?._id as unknown as string;
+      logAdminAction({
+        adminUserId,
+        action: "payment_ledger.checkpoint_emitted",
+        targetType: "PaymentLedgerEntry",
+        targetId: checkpoint ? String(checkpoint.sequenceNumber) : undefined,
+        metadata: checkpoint ?? undefined,
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: checkpoint
+          ? "Checkpoint emitted successfully"
+          : "Payment ledger is empty — nothing to checkpoint",
+        data: checkpoint,
       } as ApiResponse);
     },
   );

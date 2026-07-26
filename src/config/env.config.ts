@@ -34,6 +34,12 @@ type EnvConfig = {
   RESET_PASSWORD_TOKEN_TTL_MINUTES: number;
   SEARCH_RADIUS_KM: number;
   CRON_SECRET?: string;
+  // Where periodic payment-ledger chain checkpoints get emailed — an
+  // external record outside the database, so tampering with the DB alone
+  // (even a full compromise) can't also retroactively rewrite an
+  // already-sent email. Optional: the checkpoint job just logs and skips
+  // the email step if this isn't set, rather than failing.
+  LEDGER_CHECKPOINT_EMAIL?: string;
 };
 
 const getEnvConfig = (): EnvConfig => {
@@ -78,6 +84,7 @@ const getEnvConfig = (): EnvConfig => {
     ),
     SEARCH_RADIUS_KM: Number(getEnv("SEARCH_RADIUS_KM") || "25"),
     CRON_SECRET: getEnv("CRON_SECRET"),
+    LEDGER_CHECKPOINT_EMAIL: getEnv("LEDGER_CHECKPOINT_EMAIL"),
   };
 };
 

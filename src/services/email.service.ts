@@ -1,6 +1,6 @@
 /** @format */
 
-import { resendApiKey } from "../constants/env.js";
+import { resendApiKey, from } from "../constants/env.js";
 
 import { MailerCallback } from "../dispatcher/mail.dispatcher.js";
 import { UserDocument } from "../models/user.model.js";
@@ -55,6 +55,18 @@ class EmailService {
     } catch (error) {
       throw error;
     }
+  };
+
+  // System/audit notifications with no associated User — bypasses the
+  // relayTo/MailerCallback pattern above, which is coupled to a
+  // UserDocument recipient.
+  sendSystemAlert = async (to: string, subject: string, html: string) => {
+    return this.mailClient.sendMail({
+      from: `"TheOtherWife" <${from}>`,
+      to,
+      subject,
+      html,
+    });
   };
 }
 
