@@ -19,9 +19,6 @@ export const adminRateLimitMiddleware = rateLimit({
   },
 });
 
-// Even tighter limit for the most sensitive mutations (creating a new admin
-// account, changing a user's active/suspended status) — these should be rare,
-// deliberate actions, not high-frequency traffic.
 export const adminSensitiveActionRateLimitMiddleware = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 15,
