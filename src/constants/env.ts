@@ -36,6 +36,8 @@ export const resetPasswordTokenTtlMinutes: number =
   envconfig.RESET_PASSWORD_TOKEN_TTL_MINUTES;
 export const searchRadiusKm: number = envconfig.SEARCH_RADIUS_KM;
 export const cronSecret: string | undefined = envconfig.CRON_SECRET;
+export const ledgerCheckpointEmail: string | undefined =
+  envconfig.LEDGER_CHECKPOINT_EMAIL;
 
 console.log("port", !!port);
 console.log("hostName", !!hostName);

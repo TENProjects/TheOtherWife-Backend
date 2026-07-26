@@ -32,9 +32,20 @@ export class FinancialsService {
 
   // Walks the entire ledger and recomputes every hash to confirm the chain
   // hasn't been altered — see PaymentLedgerService.verifyChainIntegrity for
-  // what this actually checks.
-  verifyLedgerIntegrity = async () => {
-    return this.paymentLedgerService.verifyChainIntegrity();
+  // what this actually checks, including the trustedCheckpoint parameter's
+  // role in catching a full database-level regeneration.
+  verifyLedgerIntegrity = async (trustedCheckpoint?: {
+    sequenceNumber: number;
+    entryHash: string;
+  }) => {
+    return this.paymentLedgerService.verifyChainIntegrity(trustedCheckpoint);
+  };
+
+  // On-demand version of the scheduled cron checkpoint — lets an admin
+  // capture an external record right now instead of waiting for the next
+  // scheduled run.
+  emitLedgerCheckpoint = async () => {
+    return this.paymentLedgerService.emitCheckpoint();
   };
 
   private percentChange = (current: number, previous: number): number => {

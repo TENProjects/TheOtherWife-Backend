@@ -507,11 +507,49 @@ import { requireAdminRole } from "../middlewares/require-admin-role.middleware.j
  *     description: >-
  *       Recomputes every entry's hash and confirms the chain hasn't been
  *       altered — detects tampering even if it happened directly against
- *       the database, bypassing the application entirely.
+ *       the database, bypassing the application entirely. Optionally pass
+ *       checkpointSequence + checkpointHash (sourced from a checkpoint
+ *       email or platform log line — never from the database itself) to
+ *       additionally confirm the live chain still agrees with that
+ *       externally recorded point in time, which a database-only
+ *       compromise (e.g. a full collection wipe-and-regenerate) cannot
+ *       satisfy even if it produces an otherwise self-consistent chain.
  *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: checkpointSequence
+ *         required: false
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: checkpointHash
+ *         required: false
+ *         schema:
+ *           type: string
  *     responses:
  *       "200":
  *         description: Verification completed (check `data.valid`)
+ *       "401":
+ *         description: Unauthorized
+ *       "403":
+ *         description: Forbidden
+ */
+
+/**
+ * @swagger
+ * /api/v1/admin/financials/ledger/checkpoint:
+ *   post:
+ *     summary: Emit an on-demand external checkpoint of the ledger's current chain HEAD (admin)
+ *     description: >-
+ *       Same checkpoint used by the scheduled cron job, triggered
+ *       immediately instead of waiting for the next run. Logs a
+ *       greppable line and, if LEDGER_CHECKPOINT_EMAIL is configured,
+ *       emails the sequence number and hash — an external record to
+ *       later verify against via GET /ledger/verify.
+ *     tags: [Admin]
+ *     responses:
+ *       "200":
+ *         description: Checkpoint emitted successfully
  *       "401":
  *         description: Unauthorized
  *       "403":
@@ -544,6 +582,10 @@ class AdminFinancialsRouter {
     this.router.get(
       "/ledger/verify",
       this.financialsController.verifyLedgerIntegrity,
+    );
+    this.router.post(
+      "/ledger/checkpoint",
+      this.financialsController.emitLedgerCheckpoint,
     );
     this.router.get(
       "/net-profit-summary",

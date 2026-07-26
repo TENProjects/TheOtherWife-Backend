@@ -27,6 +27,29 @@ import { cronAuthMiddleware } from "../middlewares/cron-auth.middleware.js";
  *       "500":
  *         description: CRON_SECRET is not configured on this server
  */
+
+/**
+ * @swagger
+ * /api/v1/internal/cron/ledger/checkpoint:
+ *   get:
+ *     summary: Publish the payment ledger's current chain HEAD externally (internal)
+ *     description: >-
+ *       Cron-only endpoint. Logs the latest ledger entry's sequence number
+ *       and hash (captured by the hosting platform's own log storage) and,
+ *       if LEDGER_CHECKPOINT_EMAIL is configured, emails it — an external
+ *       record a database-only compromise can't retroactively rewrite.
+ *       Runs even if no new ledger entries were written since the last
+ *       checkpoint.
+ *     tags: [Internal]
+ *     security: []
+ *     responses:
+ *       "200":
+ *         description: Checkpoint emitted successfully
+ *       "401":
+ *         description: Unauthorized — missing or incorrect CRON_SECRET bearer token
+ *       "500":
+ *         description: CRON_SECRET is not configured on this server
+ */
 class InternalCronRouter {
   private controller: InternalCronController;
   router: Router;
@@ -44,6 +67,11 @@ class InternalCronRouter {
       "/meal-plans/process-due",
       cronAuthMiddleware,
       this.controller.processDueMealPlanScheduledMeals,
+    );
+    this.router.get(
+      "/ledger/checkpoint",
+      cronAuthMiddleware,
+      this.controller.emitPaymentLedgerCheckpoint,
     );
   }
 }
