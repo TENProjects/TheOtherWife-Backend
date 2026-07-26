@@ -58,7 +58,15 @@ export const initializeSocket = (httpServer: HttpServer): SocketIOServer => {
 
   io.use(async (socket, next) => {
     try {
-      const token = extractCookie(socket.handshake.headers.cookie, "token");
+      // Prefer an explicit token in the handshake `auth` payload — the
+      // `token` cookie is `sameSite: "strict"`, which browsers never attach
+      // to a cross-origin WebSocket connection (e.g. the admin dashboard
+      // connecting straight to this API's own domain). The `auth` payload
+      // sidesteps that entirely and is the standard way to authenticate a
+      // Socket.IO connection regardless of client type.
+      const token =
+        (socket.handshake.auth as { token?: string } | undefined)?.token ??
+        extractCookie(socket.handshake.headers.cookie, "token");
       if (!token) {
         return next(new Error("Unauthorized"));
       }
