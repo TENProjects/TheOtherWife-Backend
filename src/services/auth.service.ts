@@ -296,6 +296,19 @@ export class AuthService {
               ...(newUser.omitPassword() as any),
             };
           } catch (error) {
+            // The pre-check above closes most of the window, but a genuine
+            // race (two concurrent signups with the same email/phone) can
+            // still slip a duplicate past it — Mongo's own unique-index
+            // rejection (E11000) would otherwise fall through as a raw,
+            // uncaught error and surface as a generic 500 instead of the
+            // same 400 the pre-check gives everyone else.
+            if ((error as { code?: number })?.code === 11000) {
+              throw new BadRequestException(
+                "An account with this email or phone number already exists",
+                HttpStatus.BAD_REQUEST,
+                ErrorCode.AUTH_USER_ALREADY_EXISTS,
+              );
+            }
             throw error;
           }
         })(body)

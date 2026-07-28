@@ -17,6 +17,7 @@ import {
   adminRateLimitMiddleware,
   adminSensitiveActionRateLimitMiddleware,
 } from "../middlewares/admin-rate-limit.middleware.js";
+import { requireAdminRole } from "../middlewares/require-admin-role.middleware.js";
 
 /**
  * @swagger
@@ -505,6 +506,7 @@ class UserRouter {
     this.router.post(
       "/admins",
       roleGuardMiddleware(["admin"]),
+      requireAdminRole(["super_admin", "manager"]),
       adminSensitiveActionRateLimitMiddleware,
       zodValidation(createAdminUserSchema),
       this.userController.createAdminUser,
