@@ -444,18 +444,44 @@ export class VendorWalletService {
     return { payoutRequests };
   };
 
-  getAdminPayoutRequests = async (status?: string) => {
+  getAdminPayoutRequests = async (
+    status?: string,
+    pagination?: { page?: number; limit?: number },
+  ) => {
     const filter: Record<string, unknown> = {};
 
-    if (status) {
+    // "paid" isn't a `status` value (the enum is only requested/processing/
+    // approved/rejected) — it's tracked separately via `paymentStatus`, set
+    // once an already-approved request is disbursed. Filtering it as
+    // `status: "paid"` would silently match nothing.
+    if (status === "paid") {
+      filter.paymentStatus = "paid";
+    } else if (status) {
       filter.status = status;
     }
 
-    const payoutRequests = await VendorPayoutRequest.find(filter)
-      .sort({ createdAt: -1 })
-      .populate("vendorId", "businessName userId");
+    const safeLimit = Math.min(Math.max(pagination?.limit ?? 10, 1), 100);
+    const safePage = Math.max(pagination?.page ?? 1, 1);
+    const skip = (safePage - 1) * safeLimit;
 
-    return { payoutRequests };
+    const [requests, total] = await Promise.all([
+      VendorPayoutRequest.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(safeLimit)
+        .populate("vendorId", "businessName userId"),
+      VendorPayoutRequest.countDocuments(filter),
+    ]);
+
+    return {
+      requests,
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        total,
+        totalPages: Math.max(Math.ceil(total / safeLimit), 1),
+      },
+    };
   };
 
   getAdminPayoutRequestById = async (requestId: string) => {

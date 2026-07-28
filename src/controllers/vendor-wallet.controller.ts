@@ -126,7 +126,11 @@ export class VendorWalletController {
 
   getAdminPayoutRequests = handleAsyncControl(async (req: Request, res: Response) => {
     const status = req.query.status as string | undefined;
-    const result = await this.vendorWalletService.getAdminPayoutRequests(status);
+    const { page, limit } = req.query;
+    const result = await this.vendorWalletService.getAdminPayoutRequests(status, {
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
 
     return res.status(HttpStatus.OK).json({
       status: "ok",
