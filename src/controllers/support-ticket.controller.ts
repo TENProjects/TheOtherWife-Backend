@@ -80,6 +80,21 @@ export class SupportTicketController {
     },
   );
 
+  pingTypingAsCustomer = handleAsyncControl(
+    async (req: Request<IdParam>, res: Response) => {
+      const customerId = req.user?._id as unknown as string;
+      await this.supportTicketService.pingTypingAsCustomer(
+        customerId,
+        req.params.id,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Typing status recorded",
+      } as ApiResponse);
+    },
+  );
+
   // ── Vendor ───────────────────────────────────────────────────────────
 
   createAsVendor = handleAsyncControl(async (req: Request, res: Response) => {
@@ -147,6 +162,21 @@ export class SupportTicketController {
     },
   );
 
+  pingTypingAsVendor = handleAsyncControl(
+    async (req: Request<IdParam>, res: Response) => {
+      const vendorUserId = req.user?._id as unknown as string;
+      await this.supportTicketService.pingTypingAsVendor(
+        vendorUserId,
+        req.params.id,
+      );
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Typing status recorded",
+      } as ApiResponse);
+    },
+  );
+
   // ── Admin ────────────────────────────────────────────────────────────
 
   getAdminTickets = handleAsyncControl(async (req: Request, res: Response) => {
@@ -204,6 +234,17 @@ export class SupportTicketController {
         status: "ok",
         message: "Reply sent successfully",
         data: { ticket },
+      } as ApiResponse);
+    },
+  );
+
+  pingTypingAsAdmin = handleAsyncControl(
+    async (req: Request<IdParam>, res: Response) => {
+      await this.supportTicketService.pingTypingAsAdmin(req.params.id);
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Typing status recorded",
       } as ApiResponse);
     },
   );

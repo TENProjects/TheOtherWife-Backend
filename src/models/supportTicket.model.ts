@@ -49,6 +49,18 @@ export interface SupportTicketDocument extends Document {
   internalNotes: SupportTicketInternalNote[];
   resolvedBy?: mongoose.Types.ObjectId;
   resolvedAt?: Date;
+  // Realtime chat delivery/typing indicators can't rely on a persistent
+  // WebSocket connection (the API runs on Vercel serverless functions,
+  // which can't hold one open — see src/realtime/socket.ts), so clients
+  // poll instead. Each field is set to "now + a few seconds" whenever that
+  // party is actively typing, and read back by the other party's poll as
+  // `fieldValue > now`, so it clears itself without needing a matching
+  // "stopped typing" call.
+  typingUntil?: {
+    customer?: Date;
+    vendor?: Date;
+    admin?: Date;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -158,6 +170,16 @@ const SupportTicketSchema = new Schema(
     resolvedAt: {
       type: Date,
       required: false,
+    },
+    typingUntil: {
+      type: {
+        customer: { type: Date, required: false },
+        vendor: { type: Date, required: false },
+        admin: { type: Date, required: false },
+      },
+      required: false,
+      default: () => ({}),
+      _id: false,
     },
   },
   { timestamps: true },

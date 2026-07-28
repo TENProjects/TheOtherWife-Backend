@@ -206,12 +206,6 @@ export class VendorService {
       );
     }
 
-    await appSignalDispatcher.emit("vendor.approved", {
-      vendorId: vendor._id.toString(),
-      vendorUserId: vendor.userId.toString(),
-      approvedByUserId: userId,
-    });
-
     return { vendor };
   };
 
@@ -610,6 +604,12 @@ export class VendorService {
     }
 
     await this.tryCreatePaystackSubaccount(vendor);
+
+    await appSignalDispatcher.emit("vendor.approved", {
+      vendorId: vendor._id.toString(),
+      vendorUserId: vendor.userId.toString(),
+      approvedByUserId: userId,
+    });
 
     return { vendor };
   };

@@ -18,6 +18,14 @@ export class FinancialsService {
   // Full, ordered audit trail for one payment — every recorded state
   // transition and money movement, oldest first.
   getPaymentLedger = async (paymentId: string) => {
+    if (!mongoose.isValidObjectId(paymentId)) {
+      throw new BadRequestException(
+        "Invalid payment ID",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
     const payment = await Payment.findById(paymentId);
     if (!payment) {
       throw new NotFoundException(

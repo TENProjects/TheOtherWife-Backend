@@ -486,11 +486,11 @@ export class AuthService {
           );
         }
 
-        if (!user.isEmailVerified) {
+        if (user.authType === "google") {
           throw new UnauthorizedExceptionError(
-            "Account not verified. Please verify your email before logging in.",
+            "This account was created with Google. Please continue with Google to sign in.",
             HttpStatus.UNAUTHORIZED,
-            ErrorCode.AUTH_EMAIL_NOT_VERIFIED,
+            ErrorCode.AUTH_UNAUTHORIZED_ACCESS,
           );
         }
 
@@ -500,6 +500,34 @@ export class AuthService {
             `Incorrect password`,
             HttpStatus.UNAUTHORIZED,
             ErrorCode.AUTH_UNAUTHORIZED_ACCESS,
+          );
+        }
+
+        // Checked only after the password is confirmed correct — otherwise
+        // anyone could probe arbitrary emails with a junk password to learn
+        // whether an account exists and is unverified, and worse, trigger a
+        // resend email-bomb against a stranger's inbox on every guess. Only
+        // once the password is verified do we know this is genuinely the
+        // account owner, at which point we resend a fresh verification email
+        // (the app has no logged-out "resend" affordance, so login is the
+        // only remaining self-service path back to a usable verification
+        // link) — but only if the previous token has actually expired, so
+        // repeated login attempts within the token's lifetime don't spam
+        // their inbox with duplicate emails.
+        if (!user.isEmailVerified) {
+          const tokenExpired =
+            !user.emailTokenExpiry || user.emailTokenExpiry <= new Date();
+
+          if (tokenExpired) {
+            await this.resendVerificationEmailForUser(user);
+          }
+
+          throw new UnauthorizedExceptionError(
+            tokenExpired
+              ? "Account not verified. We've sent you a new verification email — please check your inbox."
+              : "Account not verified. Please check your inbox for the verification email we sent you.",
+            HttpStatus.UNAUTHORIZED,
+            ErrorCode.AUTH_EMAIL_NOT_VERIFIED,
           );
         }
 
@@ -604,9 +632,16 @@ export class AuthService {
 
         await CreateProfile.customer(newUser._id as unknown as string, session);
         user = newUser;
-      } else if (!user.isEmailVerified) {
-        user.isEmailVerified = true;
-        user.authType = user.authType || "google";
+      } else if (user.authType !== "google") {
+        // Keep email/password and Google sign-in as separate identities
+        // (enterprise-style), rather than letting whoever controls the
+        // Google account for this address silently take over an existing
+        // password-based account.
+        throw new UnauthorizedExceptionError(
+          "This email is registered with a password. Please sign in with your email and password instead of Google.",
+          HttpStatus.UNAUTHORIZED,
+          ErrorCode.AUTH_UNAUTHORIZED_ACCESS,
+        );
       }
 
       const { token: accessToken } = generateToken(user);

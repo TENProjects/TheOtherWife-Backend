@@ -121,6 +121,7 @@ class VendorSupportTicketRouter {
       zodValidation(replyToSupportTicketSchema),
       this.controller.replyAsVendor,
     );
+    this.router.post("/:id/typing", this.controller.pingTypingAsVendor);
   }
 }
 

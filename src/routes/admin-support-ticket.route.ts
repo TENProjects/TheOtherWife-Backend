@@ -161,6 +161,7 @@ class AdminSupportTicketRouter {
       zodValidation(replyToSupportTicketSchema),
       this.controller.replyAsAdmin,
     );
+    this.router.post("/:id/typing", this.controller.pingTypingAsAdmin);
     this.router.patch(
       "/:id/status",
       zodValidation(updateSupportTicketStatusSchema),

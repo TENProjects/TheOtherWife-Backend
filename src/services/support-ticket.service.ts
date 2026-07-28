@@ -41,6 +41,30 @@ const omitInternalNotes = (ticket: SupportTicketDocument) => {
   return rest;
 };
 
+// How long a single "I'm typing" ping stays valid for — clients re-ping on
+// roughly this cadence while the user keeps typing, so the indicator clears
+// itself a few seconds after they stop without a separate "stopped typing"
+// call.
+const TYPING_TTL_MS = 6000;
+
+// Polling clients read this alongside the ticket itself (see getMyTicketById
+// / getVendorTicketById / getAdminTicketById) instead of hitting a separate
+// endpoint every tick.
+const computeTypingStatus = (ticket: SupportTicketDocument) => {
+  const now = Date.now();
+  const typingUntil = (ticket.typingUntil ?? {}) as Record<string, Date | undefined>;
+  return {
+    customer: !!typingUntil.customer && typingUntil.customer.getTime() > now,
+    vendor: !!typingUntil.vendor && typingUntil.vendor.getTime() > now,
+    admin: !!typingUntil.admin && typingUntil.admin.getTime() > now,
+  };
+};
+
+const withTypingStatus = <T extends Record<string, any>>(ticketObj: T, ticket: SupportTicketDocument) => ({
+  ...ticketObj,
+  typing: computeTypingStatus(ticket),
+});
+
 export class SupportTicketService {
   private notificationService = new NotificationService();
 
@@ -202,7 +226,22 @@ export class SupportTicketService {
       );
     }
 
-    return ticket;
+    return withTypingStatus(omitInternalNotes(ticket), ticket);
+  };
+
+  pingTypingAsCustomer = async (customerId: string, ticketId: string) => {
+    const ticket = await SupportTicket.findOneAndUpdate(
+      { _id: ticketId, customerId },
+      { $set: { "typingUntil.customer": new Date(Date.now() + TYPING_TTL_MS) } },
+    ).select("_id");
+
+    if (!ticket) {
+      throw new NotFoundException(
+        "Ticket not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
   };
 
   replyAsCustomer = async (
@@ -333,7 +372,23 @@ export class SupportTicketService {
       );
     }
 
-    return ticket;
+    return withTypingStatus(omitInternalNotes(ticket), ticket);
+  };
+
+  pingTypingAsVendor = async (vendorUserId: string, ticketId: string) => {
+    const vendor = await this.getVendorByUserId(vendorUserId);
+    const ticket = await SupportTicket.findOneAndUpdate(
+      { _id: ticketId, vendorId: vendor._id },
+      { $set: { "typingUntil.vendor": new Date(Date.now() + TYPING_TTL_MS) } },
+    ).select("_id");
+
+    if (!ticket) {
+      throw new NotFoundException(
+        "Ticket not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
   };
 
   replyAsVendor = async (
@@ -425,7 +480,21 @@ export class SupportTicketService {
       );
     }
 
-    return ticket;
+    return withTypingStatus(ticket.toObject(), ticket);
+  };
+
+  pingTypingAsAdmin = async (ticketId: string) => {
+    const ticket = await SupportTicket.findByIdAndUpdate(ticketId, {
+      $set: { "typingUntil.admin": new Date(Date.now() + TYPING_TTL_MS) },
+    }).select("_id");
+
+    if (!ticket) {
+      throw new NotFoundException(
+        "Ticket not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
   };
 
   replyAsAdmin = async (

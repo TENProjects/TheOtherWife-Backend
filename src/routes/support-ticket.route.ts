@@ -123,6 +123,7 @@ class SupportTicketRouter {
       zodValidation(replyToSupportTicketSchema),
       this.controller.replyAsCustomer,
     );
+    this.router.post("/me/:id/typing", this.controller.pingTypingAsCustomer);
   }
 }
 
