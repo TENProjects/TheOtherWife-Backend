@@ -1,6 +1,6 @@
 /** @format */
 
-import { ClientSession } from "mongoose";
+import mongoose, { ClientSession } from "mongoose";
 import Order from "../models/order.model.js";
 import Meal from "../models/meal.model.js";
 import Payment from "../models/payment.model.js";
@@ -11,6 +11,7 @@ import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import Vendor from "../models/vendor.model.js";
+import User from "../models/user.model.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
 import { transaction } from "../util/transaction.util.js";
 import { VendorWalletService } from "./vendor-wallet.service.js";
@@ -538,13 +539,19 @@ export class OrderService {
   // In Progress/Delayed/Completed/Cancelled classification, computed via
   // buildAdminOrderBucketQuery), with pagination and a flag for orders with
   // a pending refund request.
+  // Escapes regex metacharacters in admin-supplied search input before it's
+  // used to build a RegExp, so a search query can't inject regex/ReDoS.
+  private escapeRegex = (value: string): string =>
+    value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
   getAllOrdersForAdmin = async (filters: {
     status?: string;
     bucket?: "in_progress" | "delayed" | "completed" | "cancelled";
+    search?: string;
     page?: number;
     limit?: number;
   }) => {
-    const { status, bucket, page = 1, limit = 50 } = filters;
+    const { status, bucket, search, page = 1, limit = 50 } = filters;
     const safeLimit = Math.min(Math.max(limit, 1), 100);
     const safePage = Math.max(page, 1);
 
@@ -553,6 +560,53 @@ export class OrderService {
       : {};
     if (!bucket && status) {
       query.status = status;
+    }
+
+    // Order documents don't store customer/vendor names directly (only
+    // refs), so a name search has to resolve to matching User/Vendor _ids
+    // first, then OR that in alongside a direct order-id match.
+    if (search && search.trim()) {
+      const trimmed = search.trim();
+      const regex = new RegExp(this.escapeRegex(trimmed), "i");
+      const orConditions: Record<string, any>[] = [];
+
+      if (mongoose.Types.ObjectId.isValid(trimmed)) {
+        orConditions.push({ _id: trimmed });
+      }
+
+      const [matchingCustomers, matchingVendors] = await Promise.all([
+        User.find({
+          userType: "customer",
+          $or: [{ firstName: regex }, { lastName: regex }],
+        }).select("_id"),
+        Vendor.find({ businessName: regex }).select("_id"),
+      ]);
+
+      if (matchingCustomers.length) {
+        orConditions.push({
+          customerId: { $in: matchingCustomers.map((c) => c._id) },
+        });
+      }
+      if (matchingVendors.length) {
+        orConditions.push({
+          vendorId: { $in: matchingVendors.map((v) => v._id) },
+        });
+      }
+
+      // No matches at all — force an empty result set rather than an
+      // unfiltered one, since the admin explicitly searched for something.
+      const searchOr = orConditions.length ? orConditions : [{ _id: null }];
+
+      // The "in_progress" bucket query already sets its own top-level $or —
+      // assigning query.$or here would silently clobber it (same object
+      // key). Fold both into $and instead so bucket + search combine
+      // correctly when applied together.
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, { $or: searchOr }];
+        delete query.$or;
+      } else {
+        query.$or = searchOr;
+      }
     }
 
     const [orders, total] = await Promise.all([

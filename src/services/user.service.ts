@@ -14,9 +14,45 @@ import Order from "../models/order.model.js";
 import Meal from "../models/meal.model.js";
 import Payment from "../models/payment.model.js";
 import { AuthService } from "./auth.service.js";
+import { NotificationService } from "./notification.service.js";
+import { PushNotificationService } from "./push-notification.service.js";
 
 export class UserService {
   private authService = new AuthService();
+  private notificationService = new NotificationService();
+  private pushNotificationService = new PushNotificationService();
+
+  // Best-effort — a failed notification must never block the actual status
+  // change (the refreshToken clear in updateUserStatus + authMiddleware's
+  // own status check already do the real enforcement work regardless).
+  private notifyAccountStatusChange = (
+    userId: string,
+    recipientType: "customer" | "vendor",
+    status: "active" | "suspended" | "deleted",
+    reason: string | undefined,
+    pushEnabled: boolean,
+    expoTokens: string[],
+  ) => {
+    const title = status === "suspended" ? "Account Suspended" : "Account Reactivated";
+    const body =
+      status === "suspended"
+        ? `Your account has been suspended.${reason ? ` Reason: ${reason}` : ""} Contact support for assistance.`
+        : "Your account has been reactivated. You can now log in as normal.";
+
+    this.notificationService
+      .create({ recipientUserId: userId, recipientType, type: "system", title, body })
+      .catch((error) => {
+        console.error("Failed to create account status notification:", error);
+      });
+
+    if (pushEnabled && expoTokens.length) {
+      this.pushNotificationService
+        .sendToTokens(expoTokens, { title, body })
+        .catch((error) => {
+          console.error("Failed to push account status notification:", error);
+        });
+    }
+  };
 
   getCurrentUser = async (userId: string) => {
     if (!userId) {
@@ -944,6 +980,7 @@ export class UserService {
         );
       }
 
+      const previousStatus = user.status;
       user.status = status;
       // Cleared on reactivation, set (or left blank) on suspend/delete.
       user.statusReason = status === "active" ? "" : (reason ?? "");
@@ -958,6 +995,13 @@ export class UserService {
       }
 
       await user.save({ session });
+
+      // Only a real suspend/reactivate transition warrants notifying the
+      // user — not "deleted", and not a no-op status write.
+      const shouldNotifyStatusChange =
+        previousStatus !== status &&
+        (status === "suspended" || (status === "active" && previousStatus === "suspended")) &&
+        (user.userType === "customer" || user.userType === "vendor");
 
       if (user.userType === "vendor") {
         const vendor = await Vendor.findOne({ userId: user._id }).session(session);
@@ -983,6 +1027,27 @@ export class UserService {
             },
           },
           { session },
+        );
+
+        if (shouldNotifyStatusChange) {
+          this.notifyAccountStatusChange(
+            user._id.toString(),
+            "vendor",
+            status,
+            reason,
+            vendor.pushNotificationsEnabled,
+            vendor.expoTokens,
+          );
+        }
+      } else if (shouldNotifyStatusChange && user.userType === "customer") {
+        const customer = await Customer.findOne({ userId: user._id }).session(session);
+        this.notifyAccountStatusChange(
+          user._id.toString(),
+          "customer",
+          status,
+          reason,
+          customer?.pushNotificationsEnabled ?? false,
+          customer?.expoTokens ?? [],
         );
       }
 

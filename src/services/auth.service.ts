@@ -490,6 +490,22 @@ export class AuthService {
           );
         }
 
+        // Checked after the password compare (not before) so a wrong-password
+        // guess never reveals whether the account is suspended. A suspended
+        // account must be rejected right here at login — not just by
+        // authMiddleware on the next request — so the user gets a clear
+        // "account suspended" message instead of a token that immediately
+        // 403s on every subsequent call.
+        if (user.status !== "active") {
+          throw new UnauthorizedExceptionError(
+            user.status === "suspended"
+              ? "Your account has been suspended. Contact support for assistance."
+              : "This account is no longer active.",
+            HttpStatus.FORBIDDEN,
+            ErrorCode.ACCESS_UNAUTHORIZED,
+          );
+        }
+
         const { token: accessToken } = generateToken(user);
 
         const { refreshToken } = generateRefreshToken(user);

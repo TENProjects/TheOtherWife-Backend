@@ -327,6 +327,15 @@ import {
  *           /admin/performance-metrics, so pagination and counts for these
  *           tabs stay accurate. Takes precedence over `status`.
  *       - in: query
+ *         name: search
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: >-
+ *           Matches against the order id (exact) or the populated
+ *           customer/vendor name (case-insensitive substring). Combines with
+ *           `status`/`bucket` filters rather than replacing them.
+ *       - in: query
  *         name: page
  *         required: false
  *         schema:

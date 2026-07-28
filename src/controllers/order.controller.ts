@@ -169,7 +169,7 @@ export class OrderController {
 
   getAllOrdersForAdmin = handleAsyncControl(
     async (req: Request, res: Response): Promise<Response> => {
-      const { status, bucket, page, limit } = req.query;
+      const { status, bucket, search, page, limit } = req.query;
       const result = await this.orderService.getAllOrdersForAdmin({
         status: status as string | undefined,
         bucket: bucket as
@@ -178,6 +178,7 @@ export class OrderController {
           | "completed"
           | "cancelled"
           | undefined,
+        search: search as string | undefined,
         page: page ? Number(page) : undefined,
         limit: limit ? Number(limit) : undefined,
       });
