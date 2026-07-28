@@ -312,12 +312,14 @@ export class AuthService {
             throw error;
           }
         })(body)
-        .then((result) => {
+        .then(async (result) => {
           const { accessToken, refreshToken, ...userWithoutPassword } = result;
 
-          setImmediate(async () => {
-            await this.sendVerificationEmail(userWithoutPassword);
-          });
+          // Must be awaited, not fire-and-forget: on Vercel serverless, the
+          // function's execution context is frozen/torn down the moment the
+          // HTTP response is sent, so a setImmediate scheduled after that
+          // point may never actually run — the email silently never sends.
+          await this.sendVerificationEmail(userWithoutPassword);
 
           return result;
         });
@@ -356,9 +358,8 @@ export class AuthService {
             await user.save({ session });
 
             const userWithoutPassword = user.omitPassword();
-            setImmediate(async () => {
-              await this.sendVerificationEmail(userWithoutPassword);
-            });
+            // Awaited for the same reason as signup's — see comment there.
+            await this.sendVerificationEmail(userWithoutPassword);
 
             throw new BadRequestException(
               "Verification link expired. A new verification email has been sent.",
@@ -388,37 +389,36 @@ export class AuthService {
           throw error;
         }
       })(emailToken)
-      .then((result) => {
+      .then(async (result) => {
         const userWithoutPassword = result;
 
-        setImmediate(async () => {
-          await this.sendTrackedEmail(
-            userWithoutPassword._id,
-            {
-              statusField: "welcomeEmailStatus",
-              lastAttemptField: "welcomeEmailLastAttemptAt",
-              errorField: "welcomeEmailError",
-            },
-            async () => {
-              const htmlTemplate = await getTemplate(
-                "src/templates",
-                "welcome-email.template.html",
-              );
+        // Awaited for the same reason as signup's — see comment there.
+        await this.sendTrackedEmail(
+          userWithoutPassword._id,
+          {
+            statusField: "welcomeEmailStatus",
+            lastAttemptField: "welcomeEmailLastAttemptAt",
+            errorField: "welcomeEmailError",
+          },
+          async () => {
+            const htmlTemplate = await getTemplate(
+              "src/templates",
+              "welcome-email.template.html",
+            );
 
-              const { template } = getFormattedData(
-                htmlTemplate,
-                userWithoutPassword,
-              );
+            const { template } = getFormattedData(
+              htmlTemplate,
+              userWithoutPassword,
+            );
 
-              const data = {
-                user: userWithoutPassword,
-                message: template,
-              };
+            const data = {
+              user: userWithoutPassword,
+              message: template,
+            };
 
-              await mailer.relayTo(data, MailAction.welcomeUser);
-            },
-          );
-        });
+            await mailer.relayTo(data, MailAction.welcomeUser);
+          },
+        );
         return result;
       });
   };
@@ -778,38 +778,37 @@ export class AuthService {
           throw error;
         }
       })(email)
-      .then((result) => {
+      .then(async (result) => {
         if (!result) {
           return null;
         }
 
-        setImmediate(async () => {
-          await this.sendTrackedEmail(
-            result.user._id,
-            {
-              statusField: "passwordResetEmailStatus",
-              lastAttemptField: "passwordResetEmailLastAttemptAt",
-              errorField: "passwordResetEmailError",
-            },
-            async () => {
-              const htmlTemplate = await getTemplate(
-                "src/templates",
-                "reset-password.template.html",
-              );
+        // Awaited for the same reason as signup's — see comment there.
+        await this.sendTrackedEmail(
+          result.user._id,
+          {
+            statusField: "passwordResetEmailStatus",
+            lastAttemptField: "passwordResetEmailLastAttemptAt",
+            errorField: "passwordResetEmailError",
+          },
+          async () => {
+            const htmlTemplate = await getTemplate(
+              "src/templates",
+              "reset-password.template.html",
+            );
 
-              const { template } = getFormattedData(htmlTemplate, result.user);
-              const resetUrl = `${frontendUrl}/reset-password?token=${result.rawToken}`;
-              const html = template.replaceAll("{{resetUrl}}", resetUrl);
+            const { template } = getFormattedData(htmlTemplate, result.user);
+            const resetUrl = `${frontendUrl}/reset-password?token=${result.rawToken}`;
+            const html = template.replaceAll("{{resetUrl}}", resetUrl);
 
-              const data = {
-                user: result.user,
-                message: html,
-              } as MailData;
+            const data = {
+              user: result.user,
+              message: html,
+            } as MailData;
 
-              await mailer.relayTo(data, MailAction.resetPassword);
-            },
-          );
-        });
+            await mailer.relayTo(data, MailAction.resetPassword);
+          },
+        );
         return result;
       });
   };

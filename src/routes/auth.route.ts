@@ -214,6 +214,54 @@ import { zodValidation } from "../middlewares/validation.js";
 
 /**
  * @openapi
+ * /api/v1/auth/google:
+ *   post:
+ *     summary: Sign in (or sign up) with a Google ID token
+ *     description: >-
+ *       Verifies the Google id_token against the configured OAuth client
+ *       id(s). Creates a new customer account on first sign-in — already
+ *       email-verified, since Google vouches for the address. Rejects if
+ *       the email already belongs to an email/password account: Google and
+ *       password sign-in are kept as separate identities, so whoever
+ *       controls the Google account for an address can't silently take
+ *       over an existing password-based account.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [idToken]
+ *             properties:
+ *               idToken:
+ *                 type: string
+ *                 description: ID token returned by the Google Sign-In client SDK
+ *     responses:
+ *       "200":
+ *         description: Signed in successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ *       "400":
+ *         description: Bad request (e.g. Google sign-in is not configured)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/responses/400"
+ *       "401":
+ *         description: >-
+ *           Unauthorized — the Google account's email isn't verified, or
+ *           this email is already registered with a password
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/responses/401"
+ */
+
+/**
+ * @openapi
  * /api/v1/auth/refresh:
  *   post:
  *     summary: Refresh user login
@@ -297,6 +345,102 @@ import { zodValidation } from "../middlewares/validation.js";
  *           application/json:
  *             schema:
  *               $ref: "#/components/responses/500"
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/forgot-password:
+ *   post:
+ *     summary: Request a password reset email
+ *     description: >-
+ *       Always responds with the same generic message regardless of
+ *       whether the email belongs to an account, so it can't be used to
+ *       enumerate registered accounts.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email: { type: string, format: email }
+ *     responses:
+ *       "200":
+ *         description: Generic success response, sent regardless of outcome
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/reset-password:
+ *   post:
+ *     summary: Set a new password using the token from the reset email
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, newPassword, confirmNewPassword]
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: Raw token from the reset-password link (the `?token=` query param)
+ *               newPassword: { type: string, format: password, minLength: 8 }
+ *               confirmNewPassword: { type: string, format: password, minLength: 8 }
+ *     responses:
+ *       "200":
+ *         description: Password reset successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ *       "400":
+ *         description: Bad request — token is invalid/expired, or passwords don't match
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/responses/400"
+ */
+
+/**
+ * @openapi
+ * /api/v1/auth/change-password:
+ *   post:
+ *     summary: Change the current (authenticated) user's password
+ *     tags: [Auth]
+ *     security:
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [currentPassword, newPassword, confirmNewPassword]
+ *             properties:
+ *               currentPassword: { type: string, format: password }
+ *               newPassword: { type: string, format: password, minLength: 8 }
+ *               confirmNewPassword: { type: string, format: password, minLength: 8 }
+ *     responses:
+ *       "200":
+ *         description: Password changed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/ApiResponse"
+ *       "401":
+ *         description: Unauthorized — not logged in, or currentPassword is incorrect
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/responses/401"
  */
 
 class AuthRouter {
