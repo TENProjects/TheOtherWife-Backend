@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.github
+
+.env
+.env.*
+!.env.example
+
+tests
+.vscode
+.refact
+.claude
+*.md
+!DEPLOYMENT.md
