@@ -287,11 +287,17 @@ export class BlogService {
       ? `${author.firstName ?? ""} ${author.lastName ?? ""}`.trim()
       : "TheOtherWife Team";
 
+  // content is HTML (RichTextEditor output, restricted to the p/h2/h3/
+  // strong/em/br allowlist enforced at save time) - both read-time and the
+  // excerpt need the plain text underneath it, not the markup.
+  private stripHtml = (content: string): string =>
+    content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+
   // ~200 words/minute, matching the "X min read" badge shown on the public
   // blog — derived from content rather than stored, so it never goes stale
   // after an edit.
   private estimateReadTime = (content: string): string => {
-    const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
+    const wordCount = this.stripHtml(content).split(/\s+/).filter(Boolean).length;
     const minutes = Math.max(1, Math.round(wordCount / 200));
     return `${minutes} min read`;
   };
@@ -299,7 +305,7 @@ export class BlogService {
   // Plain-text teaser for the post-card grid — strips the excerpt to a clean
   // word boundary rather than cutting mid-word.
   private excerpt = (content: string, maxLength = 160): string => {
-    const plain = content.replace(/\s+/g, " ").trim();
+    const plain = this.stripHtml(content);
     if (plain.length <= maxLength) return plain;
     const truncated = plain.slice(0, maxLength);
     return `${truncated.slice(0, truncated.lastIndexOf(" "))}...`;
