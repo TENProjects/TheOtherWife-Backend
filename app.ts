@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import redoc from "redoc-express";
 import helmet from "helmet";
 import cors from "cors";
+import { pathToFileURL } from "url";
 
 import { errorHandler } from "./src/middlewares/error-handler.middleware.js";
 import { sanitizeQueryAndParams } from "./src/middlewares/sanitize-query.middleware.js";
@@ -111,8 +112,16 @@ export class App {
     this.app.use(sanitizeQueryAndParams);
     this.app.use(
       rateLimit({
+        // This is a basic abuse backstop for every route in the app,
+        // including plain browsing (meals, vendors, blog) — it isn't meant
+        // to be the thing protecting credentials (see
+        // authRateLimitMiddleware for that). 100/15min was low enough to
+        // throttle a single real user's normal browsing session, and
+        // multiple legitimate users sharing one IP (office wifi, campus,
+        // carrier-grade NAT — common on Nigerian mobile networks) would
+        // exhaust it even faster.
         windowMs: 15 * 60 * 1000,
-        max: 100,
+        max: 500,
         standardHeaders: true,
         legacyHeaders: false,
         validate: {
@@ -220,7 +229,13 @@ export class App {
 const appInstance = new App();
 const app = appInstance.app;
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Plain `file://${process.argv[1]}` string concatenation only ever matches
+// on POSIX — on Windows, process.argv[1] is a raw backslash path (e.g.
+// "C:\foo\app.ts"), not a URL, so it never equals import.meta.url's
+// properly-encoded "file:///C:/foo/app.ts" and this check silently always
+// failed. pathToFileURL() does the same OS-correct conversion Node itself
+// uses, so the comparison actually works cross-platform.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   appInstance.startServer();
 }
 

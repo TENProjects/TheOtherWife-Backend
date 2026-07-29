@@ -129,6 +129,7 @@ const VendorSchema = new Schema({
     type: String,
     enum: ["pending", "approved", "suspended", "rejected"],
     default: "pending",
+    index: true,
   },
   inspectionStatus: {
     type: String,
@@ -224,6 +225,20 @@ const VendorSchema = new Schema({
     type: Object,
     required: false,
   },
+});
+
+// Matches getFeaturedVendors' (and any similar public-listing) query shape
+// exactly: filter on approvalStatus/isAvailable, then sort by the three
+// rating fields — without this, that query has no index to use at all and
+// falls back to a full collection scan plus an in-memory sort on every
+// call, which measured multiple seconds per request even at rest and
+// degraded further under concurrent load.
+VendorSchema.index({
+  approvalStatus: 1,
+  isAvailable: 1,
+  ratingScore: -1,
+  ratingCount: -1,
+  ratingAverage: -1,
 });
 
 export default model<VendorDocument>("Vendor", VendorSchema);

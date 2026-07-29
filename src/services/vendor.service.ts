@@ -195,7 +195,7 @@ export class VendorService {
     }
 
     const vendor = await Vendor.findOne({ userId })
-      .populate("userId")
+      .populate("userId", "-passwordHash -refreshToken -resetPasswordTokenHash -emailToken")
       .populate("addressId");
 
     if (!vendor) {

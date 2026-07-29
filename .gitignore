@@ -22,6 +22,6 @@ env.prod.enc
 
 package-lock.json
 
-.claude
+.claude/
 
-.refact
+.refact/

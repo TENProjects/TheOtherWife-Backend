@@ -13,6 +13,7 @@ import {
   refreshTokenSchema,
 } from "../zod-schema/auth.schema.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
+import { authRateLimitMiddleware } from "../middlewares/auth-rate-limit.middleware.js";
 import { zodValidation } from "../middlewares/validation.js";
 
 /**
@@ -454,29 +455,39 @@ class AuthRouter {
   }
 
   initializeRoutes() {
+    // authRateLimitMiddleware is deliberately scoped to just the endpoints
+    // where brute-force/credential-stuffing/account-enumeration abuse is
+    // the actual risk — not /verify (a long random token, impractical to
+    // guess) or /refresh (fires automatically to keep legitimate sessions
+    // alive, and tightening it would break normal usage).
     this.router.post(
       "/signup",
+      authRateLimitMiddleware,
       zodValidation(registerUserSchema),
       this.authController.handleSignup,
     );
     this.router.get("/verify", this.authController.verifySignup);
     this.router.post(
       "/resend-verification",
+      authRateLimitMiddleware,
       authMiddleware,
       this.authController.handleResendVerificationEmail,
     );
     this.router.post(
       "/resend-verification-by-email",
+      authRateLimitMiddleware,
       zodValidation(resendVerificationByEmailSchema),
       this.authController.handleResendVerificationEmailByEmail,
     );
     this.router.post(
       "/login",
+      authRateLimitMiddleware,
       zodValidation(loginUserSchema),
       this.authController.handleLogin,
     );
     this.router.post(
       "/google",
+      authRateLimitMiddleware,
       zodValidation(googleLoginSchema),
       this.authController.handleGoogleLogin,
     );
@@ -492,16 +503,19 @@ class AuthRouter {
     );
     this.router.post(
       "/forgot-password",
+      authRateLimitMiddleware,
       zodValidation(forgotPasswordSchema),
       this.authController.handleForgotPassword,
     );
     this.router.post(
       "/reset-password",
+      authRateLimitMiddleware,
       zodValidation(resetPasswordSchema),
       this.authController.handleResetPassword,
     );
     this.router.post(
       "/change-password",
+      authRateLimitMiddleware,
       authMiddleware,
       zodValidation(changePasswordSchema),
       this.authController.handleChangePassword,

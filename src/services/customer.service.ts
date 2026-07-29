@@ -20,7 +20,9 @@ export class CustomerService {
       customerQuery.session(session);
     }
 
-    const customer = await customerQuery.populate("userId").populate("addressId");
+    const customer = await customerQuery
+      .populate("userId", "-passwordHash -refreshToken -resetPasswordTokenHash -emailToken")
+      .populate("addressId");
 
     if (!customer) {
       throw new NotFoundException(
@@ -151,7 +153,7 @@ export class CustomerService {
     }
 
     const customer = await Customer.findOne({ _id: customerId, userId })
-      .populate("userId")
+      .populate("userId", "-passwordHash -refreshToken -resetPasswordTokenHash -emailToken")
       .populate("addressId");
 
     if (!customer) {

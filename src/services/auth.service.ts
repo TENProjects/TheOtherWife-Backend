@@ -355,7 +355,17 @@ export class AuthService {
             const { emailToken: nextToken, emailTokenExpiry } = generateEmailToken();
             user.emailToken = nextToken;
             user.emailTokenExpiry = emailTokenExpiry;
-            await user.save({ session });
+            // Deliberately detached from this transaction's session before
+            // saving — `user` inherited it from the `.session(session)`
+            // find above, so plain `user.save()` would silently reuse it.
+            // This function always throws right after to report "link
+            // expired" to the caller, which makes transaction.use() abort
+            // the transaction; a session-scoped save would be rolled back
+            // by that abort while the email carrying this exact new token
+            // has already gone out and can't be un-sent, leaving the
+            // emailed link dead on arrival.
+            user.$session(null);
+            await user.save();
 
             const userWithoutPassword = user.omitPassword();
             // Awaited for the same reason as signup's — see comment there.
@@ -519,6 +529,16 @@ export class AuthService {
             !user.emailTokenExpiry || user.emailTokenExpiry <= new Date();
 
           if (tokenExpired) {
+            // `user` was loaded via .session(session), so Mongoose has
+            // silently attached this transaction's session to it — left
+            // alone, resendVerificationEmailForUser's user.save() would be
+            // staged inside this transaction and then undone the moment
+            // login throws below to block the unverified account, even
+            // though the email carrying that exact (now-orphaned) token
+            // has already gone out and can't be un-sent. Detaching the
+            // session first makes the token save commit independently, so
+            // the link that was actually emailed is the one that works.
+            user.$session(null);
             await this.resendVerificationEmailForUser(user);
           }
 
