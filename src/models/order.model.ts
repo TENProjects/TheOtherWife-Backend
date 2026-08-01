@@ -45,6 +45,12 @@ export interface OrderDocument extends Document {
   cancellationReason?: string;
   paidAt?: Date;
   deliveredAt?: Date;
+  // Set by the account-deletion flow (erase-activity path and the hard-delete
+  // cron) when the owning customer's PII is stripped from this order — the
+  // row itself is kept (Payment.orderId references it, and the vendor needs
+  // it for their own records), just hidden from the customer's own
+  // order-history queries. Vendor-facing queries are unaffected.
+  customerHidden?: boolean;
 }
 
 const OrderSchema = new Schema(
@@ -250,6 +256,11 @@ const OrderSchema = new Schema(
     deliveredAt: {
       type: Date,
       required: false,
+    },
+    customerHidden: {
+      type: Boolean,
+      required: false,
+      default: false,
     },
   },
   { timestamps: true },

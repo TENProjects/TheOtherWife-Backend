@@ -12,6 +12,7 @@ import { UnauthorizedExceptionError } from "../errors/unauthorized-exception.err
 import { NotFoundException } from "../errors/not-found-exception.error.js";
 
 import User, { UserDocument } from "../models/user.model.js";
+import { AccountDeletionService } from "./account-deletion.service.js";
 
 import {
   generateToken,
@@ -74,6 +75,7 @@ type TrackedEmailFields = {
 export class AuthService {
   constructor() {}
   private googleOauthClient = new OAuth2Client(googleClientId);
+  private accountDeletionService = new AccountDeletionService();
 
   // Shared by the verification, welcome, and password-reset email sends —
   // retries up to 3 times with a 1s delay, but stops immediately on a
@@ -548,6 +550,18 @@ export class AuthService {
               : "Account not verified. Please check your inbox for the verification email we sent you.",
             HttpStatus.UNAUTHORIZED,
             ErrorCode.AUTH_EMAIL_NOT_VERIFIED,
+          );
+        }
+
+        // A pending-deletion account within its 30-day grace period is
+        // reactivated by the mere act of signing back in — the deletion
+        // request review screen promises exactly this. Checked before the
+        // generic status gate below so it never falls into "no longer
+        // active".
+        if (user.status === "pending_deletion") {
+          await this.accountDeletionService.reactivateIfPendingDeletion(
+            user,
+            session,
           );
         }
 

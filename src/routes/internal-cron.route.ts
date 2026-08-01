@@ -50,6 +50,28 @@ import { cronAuthMiddleware } from "../middlewares/cron-auth.middleware.js";
  *       "500":
  *         description: CRON_SECRET is not configured on this server
  */
+
+/**
+ * @swagger
+ * /api/v1/internal/cron/accounts/hard-delete-due:
+ *   get:
+ *     summary: Permanently anonymize accounts whose 30-day deletion grace period has elapsed (internal)
+ *     description: >-
+ *       Cron-only endpoint. Requires `Authorization: Bearer <CRON_SECRET>`.
+ *       Finds every User with status "pending_deletion" whose
+ *       deletionScheduledFor has passed, scrubs their PII, clears
+ *       addresses/favourites/cart, strips+hides their order history, and
+ *       sets status to "deleted" permanently.
+ *     tags: [Internal]
+ *     security: []
+ *     responses:
+ *       "200":
+ *         description: Hard-deleted N account(s) past their grace period
+ *       "401":
+ *         description: Unauthorized — missing or incorrect CRON_SECRET bearer token
+ *       "500":
+ *         description: CRON_SECRET is not configured on this server
+ */
 class InternalCronRouter {
   private controller: InternalCronController;
   router: Router;
@@ -72,6 +94,11 @@ class InternalCronRouter {
       "/ledger/checkpoint",
       cronAuthMiddleware,
       this.controller.emitPaymentLedgerCheckpoint,
+    );
+    this.router.get(
+      "/accounts/hard-delete-due",
+      cronAuthMiddleware,
+      this.controller.hardDeleteDueAccounts,
     );
   }
 }

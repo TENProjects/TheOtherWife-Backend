@@ -42,4 +42,49 @@ export const MailAction: Record<string, MailerCallback> = {
       html: message,
     });
   },
+  deleteAccountOtp: (mailClient: MailClient, data: MailData) => {
+    const { user, message } = data;
+    return mailClient.sendMail({
+      from: `"TheOtherWife" <${from}>`,
+      to: user.email,
+      subject: mailSubject.deleteAccountOtp,
+      html: message,
+    });
+  },
+  deleteAccountScheduled: (mailClient: MailClient, data: MailData) => {
+    const { user, message } = data;
+    return mailClient.sendMail({
+      from: `"TheOtherWife" <${from}>`,
+      to: user.email,
+      subject: mailSubject.deleteAccountScheduled,
+      html: message,
+    });
+  },
+  deleteAccountActivityCleared: (mailClient: MailClient, data: MailData) => {
+    const { user, message } = data;
+    return mailClient.sendMail({
+      from: `"TheOtherWife" <${from}>`,
+      to: user.email,
+      subject: mailSubject.deleteAccountActivityCleared,
+      html: message,
+    });
+  },
+  deleteAccountVendorNotice: (mailClient: MailClient, data: MailData) => {
+    const { user, message } = data;
+    return mailClient.sendMail({
+      from: `"TheOtherWife" <${from}>`,
+      to: user.email,
+      subject: mailSubject.deleteAccountVendorNotice,
+      html: message,
+    });
+  },
+  deleteAccountFinalized: (mailClient: MailClient, data: MailData) => {
+    const { user, message } = data;
+    return mailClient.sendMail({
+      from: `"TheOtherWife" <${from}>`,
+      to: user.email,
+      subject: mailSubject.deleteAccountFinalized,
+      html: message,
+    });
+  },
 };

@@ -46,6 +46,22 @@ export interface UserDocument extends Document {
   passwordResetEmailStatus?: "pending" | "sent" | "failed";
   passwordResetEmailLastAttemptAt?: Date;
   passwordResetEmailError?: string;
+  // Account-deletion flow (public, unauthenticated — see account-deletion.service.ts).
+  // deletionOtpHash/deletionOtpExpiresAt/deletionOtpAttempts back the email-OTP
+  // step; deletionSessionTokenHash/deletionSessionExpiresAt back the short-lived
+  // token issued after OTP verification and required to confirm; deletionType
+  // and deletionReference persist across all three steps of a single request.
+  deletionOtpHash?: string;
+  deletionOtpExpiresAt?: Date;
+  deletionOtpAttempts?: number;
+  deletionType?: "full" | "erase_activity";
+  deletionSessionTokenHash?: string;
+  deletionSessionExpiresAt?: Date;
+  deletionReference?: string;
+  // Full-delete only — the hard-delete cron scrubs the account once this
+  // passes. Signing back in before then cancels the request (see
+  // AccountDeletionService.reactivateIfPendingDeletion).
+  deletionScheduledFor?: Date;
   comparePassword: (password: string) => Promise<boolean>;
   omitPassword: () => Omit<UserDocument, "password">;
 }
@@ -109,7 +125,7 @@ const UserSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["active", "suspended", "deleted"],
+      enum: ["active", "suspended", "deleted", "pending_deletion"],
       default: "active",
     },
     statusReason: {
@@ -182,6 +198,40 @@ const UserSchema = new Schema(
     },
     passwordResetEmailError: {
       type: String,
+      required: false,
+    },
+    deletionOtpHash: {
+      type: String,
+      required: false,
+    },
+    deletionOtpExpiresAt: {
+      type: Date,
+      required: false,
+    },
+    deletionOtpAttempts: {
+      type: Number,
+      required: false,
+      default: 0,
+    },
+    deletionType: {
+      type: String,
+      enum: ["full", "erase_activity"],
+      required: false,
+    },
+    deletionSessionTokenHash: {
+      type: String,
+      required: false,
+    },
+    deletionSessionExpiresAt: {
+      type: Date,
+      required: false,
+    },
+    deletionReference: {
+      type: String,
+      required: false,
+    },
+    deletionScheduledFor: {
+      type: Date,
       required: false,
     },
   },

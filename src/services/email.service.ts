@@ -10,6 +10,11 @@ const MailSubject = () => ({
     "Welcome to TheOtherWife – Your Comfort Food Journey Starts Here!",
   verifySignup: "Verify Your Email",
   resetPassword: "Reset your password",
+  deleteAccountOtp: "Confirm your account deletion request",
+  deleteAccountScheduled: "Your account is scheduled for deletion",
+  deleteAccountActivityCleared: "Your activity data has been cleared",
+  deleteAccountVendorNotice: "Closing a vendor account",
+  deleteAccountFinalized: "Your account has been deleted",
 });
 
 export const mailSubject = MailSubject();

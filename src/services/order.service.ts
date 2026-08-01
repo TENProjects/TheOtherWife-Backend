@@ -126,13 +126,20 @@ export class OrderService {
       );
     }
 
-    const orders = await Order.find({ customerId }).sort({ createdAt: -1 });
+    const orders = await Order.find({
+      customerId,
+      customerHidden: { $ne: true },
+    }).sort({ createdAt: -1 });
 
     return { orders: await this.attachMealImages(orders) };
   };
 
   getUserOrderById = async (customerId: string, orderId: string) => {
-    const order = await Order.findOne({ _id: orderId, customerId });
+    const order = await Order.findOne({
+      _id: orderId,
+      customerId,
+      customerHidden: { $ne: true },
+    });
 
     if (!order) {
       throw new NotFoundException(

@@ -27,6 +27,8 @@ import { mealRouter } from "./src/routes/meal.route.js";
 import { getTemplate } from "./src/util/get-template.util.js";
 import { checkoutRouter } from "./src/routes/checkout.route.js";
 import { paymentRouter } from "./src/routes/payment.route.js";
+import { accountDeletionRouter } from "./src/routes/account-deletion.route.js";
+import { adminAccountDeletionRouter } from "./src/routes/admin-account-deletion.route.js";
 import { orderRouter } from "./src/routes/order.route.js";
 import { vendorOnboardingRouter } from "./src/routes/vendor-onboarding.route.js";
 import { uploadRouter } from "./src/routes/upload.route.js";
@@ -152,6 +154,8 @@ export class App {
     this.app.use("/api/v1/checkout", checkoutRouter);
     this.app.use("/api/v1/orders", orderRouter);
     this.app.use("/api/v1/payments", paymentRouter);
+    this.app.use("/api/v1/account-deletion", accountDeletionRouter);
+    this.app.use("/api/v1/admin/account-deletions", adminAccountDeletionRouter);
     this.app.use("/api/v1/wallet", walletRouter);
     this.app.use("/api/v1/vendor-wallet", vendorWalletRouter);
     this.app.use("/api/v1/admin/vendor-payout-requests", adminVendorPayoutRouter);

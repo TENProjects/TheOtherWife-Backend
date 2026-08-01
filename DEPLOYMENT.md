@@ -94,6 +94,7 @@ becomes the primary deployment, add droplet-side cron entries instead:
 ```cron
 0 4 * * * curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://your.domain.com/api/v1/internal/cron/meal-plans/process-due
 0 6 * * * curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://your.domain.com/api/v1/internal/cron/ledger/checkpoint
+0 3 * * * curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://your.domain.com/api/v1/internal/cron/accounts/hard-delete-due
 ```
 
 (`$CRON_SECRET` must match the value in `.env.prod`.)
