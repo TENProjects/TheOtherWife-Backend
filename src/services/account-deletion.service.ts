@@ -10,6 +10,7 @@ import Cart from "../models/cart.model.js";
 import Order from "../models/order.model.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
+import { InternalServerError } from "../errors/internal-server.error.js";
 import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { transaction } from "../util/transaction.util.js";
@@ -92,6 +93,29 @@ export class AccountDeletionService {
     );
   };
 
+  // Wraps a mailer.relayTo call so a mail-provider failure (e.g. a
+  // misconfigured RESEND_API_KEY) surfaces as a clean, retryable 503 instead
+  // of an unhandled throw turning into a raw 500 for the caller.
+  private sendOrThrow = async (
+    data: MailData,
+    action: (typeof MailAction)[keyof typeof MailAction],
+    context: string,
+  ) => {
+    try {
+      await mailer.relayTo(data, action);
+    } catch (error) {
+      console.error(`Failed to send ${context} email`, {
+        userId: data.user._id.toString(),
+        message: (error as Error)?.message,
+      });
+      throw new InternalServerError(
+        "We couldn't send that email right now. Please try again in a moment.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+        ErrorCode.MAIL_DELIVERY_FAILED,
+      );
+    }
+  };
+
   requestDeletion = async (
     email: string,
     deletionType: "full" | "erase_activity",
@@ -106,9 +130,10 @@ export class AccountDeletionService {
         "delete-account-vendor-notice.template.html",
       );
       const { template } = getFormattedData(htmlTemplate, user);
-      await mailer.relayTo(
+      await this.sendOrThrow(
         { user, message: template } as MailData,
         MailAction.deleteAccountVendorNotice,
+        "account-deletion vendor notice",
       );
       return;
     }
@@ -116,6 +141,22 @@ export class AccountDeletionService {
     if (user.userType !== "customer") return;
 
     const otp = crypto.randomInt(100000, 1000000).toString();
+    const htmlTemplate = await getTemplate(
+      "src/templates",
+      "delete-account-otp.template.html",
+    );
+    const { template } = getFormattedData(htmlTemplate, user);
+    const html = template.replaceAll("{{otpCode}}", otp);
+
+    // Send first, persist second: if the mail fails, the user gets a clear
+    // error telling them to retry, instead of an OTP silently saved to their
+    // account that they can never actually receive or use.
+    await this.sendOrThrow(
+      { user, message: html } as MailData,
+      MailAction.deleteAccountOtp,
+      "account-deletion OTP",
+    );
+
     user.deletionOtpHash = this.hash(otp);
     user.deletionOtpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
     user.deletionOtpAttempts = 0;
@@ -124,17 +165,6 @@ export class AccountDeletionService {
       user.deletionReference = this.generateReference();
     }
     await user.save();
-
-    const htmlTemplate = await getTemplate(
-      "src/templates",
-      "delete-account-otp.template.html",
-    );
-    const { template } = getFormattedData(htmlTemplate, user);
-    const html = template.replaceAll("{{otpCode}}", otp);
-    await mailer.relayTo(
-      { user, message: html } as MailData,
-      MailAction.deleteAccountOtp,
-    );
   };
 
   verifyOtp = async (

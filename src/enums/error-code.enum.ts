@@ -24,6 +24,7 @@ export const ErrorCode = {
 
   // System Errors
   INTERNAL_SERVER_ERROR: "INTERNAL_SERVER_ERROR",
+  MAIL_DELIVERY_FAILED: "MAIL_DELIVERY_FAILED",
 } as const;
 
 export type ErrorCodeType = (typeof ErrorCode)[keyof typeof ErrorCode];
