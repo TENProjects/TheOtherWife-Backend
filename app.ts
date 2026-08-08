@@ -58,6 +58,8 @@ import { cmsRouter } from "./src/routes/cms.route.js";
 import { notificationRouter } from "./src/routes/notification.route.js";
 import { adminNotificationRouter } from "./src/routes/admin-notification.route.js";
 import { adminPlatformSettingsRouter } from "./src/routes/admin-platform-settings.route.js";
+import { homeChefApplicationRouter } from "./src/routes/home-chef-application.route.js";
+import { adminHomeChefApplicationRouter } from "./src/routes/admin-home-chef-application.route.js";
 import "./src/signals/push-notification.signal.js";
 
 export class App {
@@ -188,6 +190,11 @@ export class App {
     this.app.use("/api/v1/notifications", notificationRouter);
     this.app.use("/api/v1/admin/notifications", adminNotificationRouter);
     this.app.use("/api/v1/admin/settings", adminPlatformSettingsRouter);
+    this.app.use("/api/v1/homechef-applications", homeChefApplicationRouter);
+    this.app.use(
+      "/api/v1/admin/homechef-applications",
+      adminHomeChefApplicationRouter,
+    );
 
     this.app.get("/api-docs", async (_req, res) => {
       try {

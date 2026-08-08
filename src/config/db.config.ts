@@ -1,8 +1,19 @@
 /** @format */
 
+import dns from "dns";
 import mongoose from "mongoose";
 
-import { mongoUri } from "../constants/env.js";
+import { mongoUri, nodeEnv } from "../constants/env.js";
+
+// Some local dev machines' default DNS resolver (127.0.0.1) refuses the raw
+// UDP SRV/TXT queries a `mongodb+srv://` URI needs, even though the OS-level
+// resolver works fine for everything else (browsers, ping, etc.) — this
+// breaks Atlas connections during local development with no indication why
+// (`querySrv ECONNREFUSED`). Only applied outside production so it can never
+// change DNS resolution behavior for the deployed app on Vercel.
+if (nodeEnv !== "production") {
+  dns.setServers(["8.8.8.8", "1.1.1.1"]);
+}
 
 export class Db {
   private connectionPromise: Promise<typeof mongoose> | null = null;

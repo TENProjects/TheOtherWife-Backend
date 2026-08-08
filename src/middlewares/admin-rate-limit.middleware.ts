@@ -1,7 +1,7 @@
 /** @format */
 
 import type { Request } from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 // This one middleware instance is imported by every admin route file (20+
 // at last count), so its counter is shared across the entire admin API
@@ -14,7 +14,7 @@ import rateLimit from "express-rate-limit";
 // actually tracks per-account usage the way it's meant to. Falls back to IP
 // only as a defensive default in case this is ever reached pre-auth.
 const keyByAdminId = (req: Request): string =>
-  req.user?._id?.toString() ?? req.ip ?? "unknown";
+  req.user?._id?.toString() ?? (req.ip ? ipKeyGenerator(req.ip) : "unknown");
 
 // Tighter than the app-wide limiter (500 req/15min) since admin routes carry
 // elevated privileges (approve/reject vendors, change user status, move
