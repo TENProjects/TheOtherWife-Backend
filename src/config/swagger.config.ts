@@ -23,6 +23,15 @@ const swaggerDefinition = {
         in: "cookie",
         name: "token",
       },
+      // Partner API only (/api/v1/partner/*). Issued per partner by a TOW
+      // super_admin; unrelated to user sessions and to referral codes.
+      partnerApiKey: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "tow_pk_<keyId>.<secret>",
+        description:
+          "Partner API key issued by TOW. Send as `Authorization: Bearer tow_pk_<keyId>.<secret>`. Scoped per route; never valid on any other TOW endpoint.",
+      },
     },
     schemas: {
       User: {
