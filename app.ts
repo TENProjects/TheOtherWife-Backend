@@ -60,7 +60,11 @@ import { adminNotificationRouter } from "./src/routes/admin-notification.route.j
 import { adminPlatformSettingsRouter } from "./src/routes/admin-platform-settings.route.js";
 import { homeChefApplicationRouter } from "./src/routes/home-chef-application.route.js";
 import { adminHomeChefApplicationRouter } from "./src/routes/admin-home-chef-application.route.js";
+import { referralRouter } from "./src/routes/referral.route.js";
+import { adminReferralRouter } from "./src/routes/admin-referral.route.js";
+import { partnerRouter } from "./src/routes/partner.route.js";
 import "./src/signals/push-notification.signal.js";
+import "./src/signals/attribution.signal.js";
 
 export class App {
   app: Express;
@@ -195,8 +199,15 @@ export class App {
       "/api/v1/admin/homechef-applications",
       adminHomeChefApplicationRouter,
     );
+    // Referral / attribution core (additive — see referral.route.ts,
+    // admin-referral.route.ts, partner.route.ts).
+    this.app.use("/api/v1/referrals", referralRouter);
+    this.app.use("/api/v1/admin/referrals", adminReferralRouter);
+    this.app.use("/api/v1/partner", partnerRouter);
 
-    this.app.get("/api-docs", async (_req, res) => {
+    // Swagger UI page. The raw spec stays at /api-docs.json (the page and
+    // /redoc both load it from there).
+    this.app.get("/tow", async (_req, res) => {
       try {
         const template = await getTemplate(
           "src/templates",

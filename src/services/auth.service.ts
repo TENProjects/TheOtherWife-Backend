@@ -47,8 +47,9 @@ const parseResendStatusCode = (message?: string): number | undefined => {
 };
 
 // Anti-fake-signup allowlist — see the exemption/scope rationale where this
-// is enforced in AuthService.signup.
-const ALLOWED_EMAIL_DOMAINS = new Set([
+// is enforced in AuthService.signup. Exported (read-only use) so the partner
+// API can reject leads that could never complete TOW signup.
+export const ALLOWED_EMAIL_DOMAINS = new Set([
   "gmail.com",
   "yahoo.com",
   "hotmail.com",
