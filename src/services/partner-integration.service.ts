@@ -202,10 +202,14 @@ export class PartnerIntegrationService {
       type,
     );
 
+    // Same externalRef is excluded here: a concurrent identical request may
+    // have inserted it a moment ago, and that case must resolve as a replay
+    // (via the unique-index path below), not as a duplicate-email conflict.
     const duplicateEmail = await PartnerSubmission.findOne({
       partnerId: partner.partnerId,
       type,
       email,
+      externalRef: { $ne: input.externalRef },
     }).select("externalRef");
     if (duplicateEmail) {
       throw new AppError(

@@ -15,6 +15,8 @@ import { initializeSocket } from "./src/realtime/socket.js";
 import { corsOrigin, hostName, port } from "./src/constants/env.js";
 import { Db } from "./src/config/db.config.js";
 import { swaggerSpec } from "./src/config/swagger.config.js";
+import { partnerSwaggerSpec } from "./src/config/partner-swagger.config.js";
+import { protectInternalDocs } from "./src/middlewares/docs-basic-auth.middleware.js";
 
 import { authRouter } from "./src/routes/auth.route.js";
 import { userRouter } from "./src/routes/user.route.js";
@@ -205,9 +207,11 @@ export class App {
     this.app.use("/api/v1/admin/referrals", adminReferralRouter);
     this.app.use("/api/v1/partner", partnerRouter);
 
-    // Swagger UI page. The raw spec stays at /api-docs.json (the page and
-    // /redoc both load it from there).
-    this.app.get("/tow", async (_req, res) => {
+    // Full internal API docs — Swagger UI page, ReDoc and the raw spec — all
+    // behind HTTP Basic auth (DOCS_USERNAME / DOCS_PASSWORD). The page and
+    // /redoc load the spec from /api-docs.json; the browser re-sends the
+    // same login for it automatically.
+    this.app.get("/tow", ...protectInternalDocs, async (_req, res) => {
       try {
         const template = await getTemplate(
           "src/templates",
@@ -223,13 +227,44 @@ export class App {
 
     this.app.get(
       "/redoc",
+      ...protectInternalDocs,
       redoc({
         title: "The Other Wife API Docs",
         specUrl: "/api-docs.json",
       }),
     );
-    this.app.get("/api-docs.json", (_req, res) => {
+    this.app.get("/api-docs.json", ...protectInternalDocs, (_req, res) => {
       res.json(swaggerSpec);
+    });
+
+    // Partner-only API docs (e.g. for FoodCline): just the /api/v1/partner/*
+    // operations — no internal, user or admin endpoints. Same Swagger UI
+    // template as /tow, pointed at the filtered spec.
+    this.app.get("/attribution", (_req, res) => {
+      res.redirect("/attribution/docs");
+    });
+    this.app.get("/attribution/docs", async (_req, res) => {
+      try {
+        const template = await getTemplate(
+          "src/templates",
+          "swagger.template.html",
+        );
+        res.send(
+          template
+            .replace("url: '/api-docs.json'", "url: '/attribution/docs.json'")
+            .replace(
+              "<title>The Other Wife API Docs</title>",
+              "<title>TOW Partner API Docs</title>",
+            ),
+        );
+      } catch (error: any) {
+        res
+          .status(HttpStatus.NOT_FOUND)
+          .send(`Error reading template ${error.message}`);
+      }
+    });
+    this.app.get("/attribution/docs.json", (_req, res) => {
+      res.json(partnerSwaggerSpec);
     });
 
     this.app.use(errorHandler);
