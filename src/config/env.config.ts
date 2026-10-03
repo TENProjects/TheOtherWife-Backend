@@ -40,6 +40,12 @@ type EnvConfig = {
   // already-sent email. Optional: the checkpoint job just logs and skips
   // the email step if this isn't set, rather than failing.
   LEDGER_CHECKPOINT_EMAIL?: string;
+  // HTTP Basic credentials for the full internal API docs (/tow,
+  // /api-docs.json, /redoc) outside NODE_ENV=development (where the docs are
+  // open). Optional: when either is unset there, those docs are disabled
+  // (fail closed). The partner-only docs (/attribution/docs) are not affected.
+  DOCS_USERNAME?: string;
+  DOCS_PASSWORD?: string;
 };
 
 const getEnvConfig = (): EnvConfig => {
@@ -85,6 +91,8 @@ const getEnvConfig = (): EnvConfig => {
     SEARCH_RADIUS_KM: Number(getEnv("SEARCH_RADIUS_KM") || "25"),
     CRON_SECRET: getEnv("CRON_SECRET"),
     LEDGER_CHECKPOINT_EMAIL: getEnv("LEDGER_CHECKPOINT_EMAIL"),
+    DOCS_USERNAME: getEnv("DOCS_USERNAME"),
+    DOCS_PASSWORD: getEnv("DOCS_PASSWORD"),
   };
 };
 
