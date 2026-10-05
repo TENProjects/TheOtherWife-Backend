@@ -17,7 +17,7 @@ import { claimReferralSchema } from "../zod-schema/referral.schema.js";
  *       type: object
  *       properties:
  *         valid: { type: boolean }
- *         code: { type: string, example: FOODCLINE }
+ *         code: { type: string, example: FOODCLIME }
  *         audience: { type: string, enum: [vendor, customer, both] }
  *         campaignName: { type: string }
  *         reason:
@@ -28,7 +28,7 @@ import { claimReferralSchema } from "../zod-schema/referral.schema.js";
  *       type: object
  *       description: Provide exactly one of code or inviteToken.
  *       properties:
- *         code: { type: string, minLength: 4, maxLength: 32, example: FOODCLINE }
+ *         code: { type: string, minLength: 4, maxLength: 32, example: FOODCLIME }
  *         inviteToken: { type: string, description: Single-use claim token issued to a partner for a pre-registered lead }
  *     ReferralAttribution:
  *       type: object

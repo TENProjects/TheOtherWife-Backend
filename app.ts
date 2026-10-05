@@ -237,7 +237,7 @@ export class App {
       res.json(swaggerSpec);
     });
 
-    // Partner-only API docs (e.g. for FoodCline): just the /api/v1/partner/*
+    // Partner-only API docs (e.g. for FoodClime): just the /api/v1/partner/*
     // operations — no internal, user or admin endpoints. Same Swagger UI
     // template as /tow, pointed at the filtered spec.
     this.app.get("/attribution", (_req, res) => {

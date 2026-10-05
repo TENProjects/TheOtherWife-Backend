@@ -12,6 +12,10 @@ import {
   attributionLiveState,
   classifyVendorLifecycle,
   csvEscape,
+  DAY_MS,
+  formatWatDate,
+  watWeekStart,
+  WEEK_MS,
   getVendorSubmittedAt,
   VendorLifecycleSnapshot,
 } from "../util/referral.util.js";
@@ -40,9 +44,16 @@ export const METRIC_DEFINITIONS = {
     suspended: "Registered, Vendor.approvalStatus = suspended right now.",
     deleted: "Registered, but the vendor account no longer exists.",
     revoked: "Attributions revoked by an admin (excluded from every other count).",
-    active: "UNRESOLVED — no definition of an 'active' HomeChef exists yet.",
     qualifying:
-      "UNRESOLVED — the 'successful HomeChef' rule for the commercial target has not been decided; not reported.",
+      "Successful HomeChefs (agreed rule): approved by admin, inspection completed and at least one published, available meal. The first earlyTierSize (100) qualify on that alone; after that they also need completedOrdersAfterEarlyTier (1) delivered + paid order(s). Only HomeChefs registered before the 90-day window ends count. Permanent once reached.",
+    qualifyingEarly: "Successful HomeChefs in the early tier (base rule only).",
+    qualifyingStandard: "Successful HomeChefs after the early tier (base rule + completed orders).",
+    payable: "Successful HomeChefs within the payable cap (1,000) — each earns the per-HomeChef payment.",
+    qualifiedButSuspendedOrRejected:
+      "Successful HomeChefs whose vendor account is currently suspended or rejected (still counted; success is never clawed back).",
+    targetProgress: "payable ÷ payable cap, as a percentage.",
+    active:
+      "HomeChefs with at least minCompletedOrdersPerWeek (1) delivered + paid orders in the Mon–Sun WAT week; meetingInternalTarget uses internalTargetPerWeek (2).",
   },
   customers: {
     referred:
@@ -66,7 +77,11 @@ export const METRIC_DEFINITIONS = {
 type VendorRow = {
   _id: mongoose.Types.ObjectId;
   subjectUserId: mongoose.Types.ObjectId;
+  vendorId?: mongoose.Types.ObjectId;
   firstApprovedAt?: Date;
+  qualifiedAt?: Date;
+  qualificationTier?: "early" | "standard";
+  qualificationRank?: number;
   vendor: (NonNullable<VendorLifecycleSnapshot> & { approvedAt?: Date }) | null;
 };
 
@@ -134,14 +149,22 @@ export class ReferralReportingService {
         {
           $project: {
             subjectUserId: 1,
+            vendorId: 1,
             firstApprovedAt: 1,
+            qualifiedAt: 1,
+            qualificationTier: 1,
+            qualificationRank: 1,
             vendor: { $arrayElemAt: ["$vendor", 0] },
           },
         },
         {
           $project: {
             subjectUserId: 1,
+            vendorId: 1,
             firstApprovedAt: 1,
+            qualifiedAt: 1,
+            qualificationTier: 1,
+            qualificationRank: 1,
             "vendor.approvalStatus": 1,
             "vendor.inspectionStatus": 1,
             "vendor.approvedAt": 1,
@@ -251,9 +274,13 @@ export class ReferralReportingService {
       suspended: 0,
       deleted: 0,
       revoked: revokedVendor,
-      active: null as number | null,
-      qualifying: null as number | null,
+      qualifying: 0,
+      qualifyingEarly: 0,
+      qualifyingStandard: 0,
+      payable: 0,
+      qualifiedButSuspendedOrRejected: 0,
     };
+    const payableCap = campaign.rules?.homechef?.payableCap ?? null;
 
     for (const row of vendorRows) {
       const vendor = row.vendor && Object.keys(row.vendor).length ? row.vendor : null;
@@ -271,7 +298,21 @@ export class ReferralReportingService {
       if (vendor?.inspectionStatus === "in_progress") homechefs.inspectionInProgress += 1;
       if (vendor?.inspectionStatus === "completed") homechefs.inspected += 1;
       if (vendor && (row.firstApprovedAt || vendor.approvedAt)) homechefs.everApproved += 1;
+      if (row.qualifiedAt) {
+        homechefs.qualifying += 1;
+        if (row.qualificationTier === "early") homechefs.qualifyingEarly += 1;
+        else homechefs.qualifyingStandard += 1;
+        if (payableCap !== null && (row.qualificationRank ?? Infinity) <= payableCap) homechefs.payable += 1;
+        if (bucket === "suspended" || bucket === "rejected") homechefs.qualifiedButSuspendedOrRejected += 1;
+      }
     }
+
+    const active = await this.activeHomechefs(
+      campaign.rules?.active,
+      vendorRows.map((r) => r.vendorId).filter((id): id is mongoose.Types.ObjectId => !!id),
+      now,
+    );
+    const windowEnd = campaign.windowEndsAt ? new Date(campaign.windowEndsAt).getTime() : null;
 
     let activeAttribution = 0;
     let expiredAttribution = 0;
@@ -308,10 +349,18 @@ export class ReferralReportingService {
       },
       homechefs: {
         ...homechefs,
-        target: campaign.targets?.homechefs ?? null,
-        // Progress is only meaningful once the qualifying rule is decided.
-        targetProgress: null as number | null,
+        target: payableCap ?? campaign.targets?.homechefs ?? null,
+        targetProgress: payableCap ? Math.round((homechefs.payable / payableCap) * 10000) / 100 : null,
+        active,
       },
+      window: campaign.rules?.homechef
+        ? {
+            startsAt: campaign.windowStartsAt ?? null,
+            endsAt: campaign.windowEndsAt ?? null,
+            daysRemaining: windowEnd ? Math.max(0, Math.ceil((windowEnd - now.getTime()) / DAY_MS)) : null,
+          }
+        : null,
+      rules: campaign.rules ?? null,
       customers: {
         referred: customerSubmissions + directCustomerAttributions,
         registered: customerAttributions.length,
@@ -322,6 +371,45 @@ export class ReferralReportingService {
       },
       orders: { basis, ...orders },
       definitions: METRIC_DEFINITIONS,
+    };
+  };
+
+  // Active HomeChefs for the last full and the current Mon–Sun WAT week.
+  private activeHomechefs = async (
+    rules: { minCompletedOrdersPerWeek: number; internalTargetPerWeek: number } | undefined,
+    vendorIds: mongoose.Types.ObjectId[],
+    now: Date,
+  ) => {
+    if (!rules) return null;
+    const current = watWeekStart(now);
+    const previous = new Date(current.getTime() - WEEK_MS);
+    const countFor = async (start: Date, end: Date) => {
+      if (!vendorIds.length) return { active: 0, meetingInternalTarget: 0 };
+      const rows = await Order.aggregate<{ _id: mongoose.Types.ObjectId; n: number }>([
+        {
+          $match: {
+            vendorId: { $in: vendorIds },
+            status: "delivered",
+            paymentStatus: "paid",
+            deliveredAt: { $gte: start, $lt: end },
+          },
+        },
+        { $group: { _id: "$vendorId", n: { $sum: 1 } } },
+      ]);
+      return {
+        active: rows.filter((r) => r.n >= rules.minCompletedOrdersPerWeek).length,
+        meetingInternalTarget: rows.filter((r) => r.n >= rules.internalTargetPerWeek).length,
+      };
+    };
+    const [lastWeek, thisWeek] = await Promise.all([
+      countFor(previous, current),
+      countFor(current, new Date(current.getTime() + WEEK_MS)),
+    ]);
+    return {
+      minCompletedOrdersPerWeek: rules.minCompletedOrdersPerWeek,
+      internalTargetPerWeek: rules.internalTargetPerWeek,
+      lastFullWeek: { weekStart: formatWatDate(previous), ...lastWeek },
+      currentWeek: { weekStart: formatWatDate(current), ...thisWeek },
     };
   };
 
@@ -360,6 +448,9 @@ export class ReferralReportingService {
       "Onboarding Submitted At",
       "Vendor Approved At",
       "First Approved After Attribution",
+      "Successful At",
+      "Successful Rank",
+      "Successful Tier",
     ];
 
     const lines = rows.map((row) => {
@@ -385,6 +476,9 @@ export class ReferralReportingService {
         isVendor ? getVendorSubmittedAt(vendor as VendorLifecycleSnapshot) ?? "" : "",
         isVendor ? vendor?.approvedAt?.toISOString() ?? "" : "",
         row.firstApprovedAt?.toISOString() ?? "",
+        (row as any).qualifiedAt ? new Date((row as any).qualifiedAt).toISOString() : "",
+        (row as any).qualificationRank ?? "",
+        (row as any).qualificationTier ?? "",
       ]
         .map(csvEscape)
         .join(",");

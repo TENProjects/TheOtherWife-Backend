@@ -20,7 +20,10 @@ import ReferralCode from "../models/referralCode.model.js";
 import User from "../models/user.model.js";
 import Vendor from "../models/vendor.model.js";
 
-import { ALLOWED_EMAIL_DOMAINS } from "./auth.service.js";
+import {
+  ALLOWED_EMAIL_DESCRIPTION,
+  isAllowedSignupEmailDomain,
+} from "./auth.service.js";
 import { AttributionService, audienceAllows } from "./attribution.service.js";
 
 import {
@@ -166,12 +169,9 @@ export class PartnerIntegrationService {
   };
 
   private assertSignupCompatibleEmail = (email: string) => {
-    const domain = email.split("@")[1]?.toLowerCase();
-    if (!domain || !ALLOWED_EMAIL_DOMAINS.has(domain)) {
+    if (!isAllowedSignupEmailDomain(email.split("@")[1])) {
       throw new BadRequestException(
-        `Email domain is not accepted by TOW signup. Accepted domains: ${Array.from(
-          ALLOWED_EMAIL_DOMAINS,
-        ).join(", ")}`,
+        `Email domain is not accepted by TOW signup. Accepted: ${ALLOWED_EMAIL_DESCRIPTION}`,
         HttpStatus.BAD_REQUEST,
         ErrorCode.VALIDATION_ERROR,
       );
@@ -240,6 +240,11 @@ export class PartnerIntegrationService {
         requestHash,
         inviteTokenHash: tokenHash,
         credentialKeyId: partner.keyId,
+        // The partner already knows about creation (this response), so the
+        // status checker starts from here and only reports later changes.
+        lastStatus: "submitted",
+        lastStatusChangedAt: now,
+        statusSeq: 0,
         events: [
           {
             type: "submitted",
@@ -376,7 +381,7 @@ export class PartnerIntegrationService {
       .limit(limit + 1);
 
     const page = submissions.slice(0, limit);
-    const items = await this.representMany(page);
+    const items = await this.describeSubmissions(page);
     const last = page[page.length - 1];
 
     return {
@@ -393,11 +398,13 @@ export class PartnerIntegrationService {
     submission: PartnerSubmissionDocument,
     campaign?: ReferralCampaignDocument | null,
   ) => {
-    const [result] = await this.representMany([submission], campaign ? [campaign] : undefined);
+    const [result] = await this.describeSubmissions([submission], campaign ? [campaign] : undefined);
     return result;
   };
 
-  private representMany = async (
+  // Public so the webhook status checker derives status with exactly the
+  // same logic as the GET endpoints (services/partner-webhook.service.ts).
+  describeSubmissions = async (
     submissions: PartnerSubmissionDocument[],
     preloadedCampaigns?: ReferralCampaignDocument[],
   ) => {

@@ -7,6 +7,7 @@ import { MealPlanFulfillmentService } from "../services/meal-plan-fulfillment.se
 import { PaymentLedgerService } from "../services/payment-ledger.service.js";
 import { AccountDeletionService } from "../services/account-deletion.service.js";
 import { ApiResponse } from "../util/response.util.js";
+import { partnerWebhookService } from "../services/partner-webhook.service.js";
 
 export class InternalCronController {
   private mealPlanFulfillmentService: MealPlanFulfillmentService;
@@ -39,6 +40,17 @@ export class InternalCronController {
           ? "Payment ledger checkpoint emitted successfully"
           : "Payment ledger is empty — nothing to checkpoint",
         data: checkpoint,
+      } as ApiResponse);
+    },
+  );
+
+  runPartnerWebhooks = handleAsyncControl(
+    async (_req: Request, res: Response): Promise<Response> => {
+      const result = await partnerWebhookService.run();
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Partner status changes processed",
+        data: result,
       } as ApiResponse);
     },
   );

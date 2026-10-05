@@ -7,6 +7,7 @@ import {
   partnerAuthMiddleware,
   requirePartnerScope,
 } from "../middlewares/partner-auth.middleware.js";
+import { partnerSignatureMiddleware } from "../middlewares/partner-signature.middleware.js";
 import { partnerIdempotencyMiddleware } from "../middlewares/partner-idempotency.middleware.js";
 import { partnerRateLimitMiddleware } from "../middlewares/partner-rate-limit.middleware.js";
 import { zodValidation } from "../middlewares/validation.js";
@@ -39,10 +40,10 @@ import { partnerSubmissionSchema } from "../zod-schema/partner.schema.js";
  *       name: updatedSince
  *       required: false
  *       description: >-
- *         ISO 8601 date-time. Returns submissions whose record changed at or
- *         after this time (created, linked to a TOW account, invite
- *         re-issued, first approval). Always read `status` for the current
- *         lifecycle state.
+ *         ISO 8601 date-time. Returns submissions created or changed at or
+ *         after this time, including every status change. TOW detects status
+ *         changes within about 5 minutes, so overlap your polling window by a
+ *         few minutes.
  *       schema: { type: string, format: date-time }
  *     PartnerCursor:
  *       in: query
@@ -78,7 +79,7 @@ import { partnerSubmissionSchema } from "../zod-schema/partner.schema.js";
  *             field issues.
  *           oneOf:
  *             - type: string
- *               enum: [PARTNER_UNAUTHORIZED, PARTNER_FORBIDDEN_SCOPE, VALIDATION_ERROR, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_IN_PROGRESS, DUPLICATE_EXTERNAL_REF, DUPLICATE_SUBMISSION, REFERRAL_CODE_INVALID, REFERRAL_CODE_DISABLED, REFERRAL_CODE_EXPIRED, REFERRAL_AUDIENCE_MISMATCH, RESOURCE_NOT_FOUND, RESOURCE_CONFLICT]
+ *               enum: [PARTNER_UNAUTHORIZED, PARTNER_SIGNATURE_INVALID, PARTNER_FORBIDDEN_SCOPE, VALIDATION_ERROR, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_IN_PROGRESS, DUPLICATE_EXTERNAL_REF, DUPLICATE_SUBMISSION, REFERRAL_CODE_INVALID, REFERRAL_CODE_DISABLED, REFERRAL_CODE_EXPIRED, REFERRAL_AUDIENCE_MISMATCH, RESOURCE_NOT_FOUND, RESOURCE_CONFLICT]
  *             - type: array
  *               items:
  *                 type: object
@@ -93,10 +94,10 @@ import { partnerSubmissionSchema } from "../zod-schema/partner.schema.js";
  *       required: [externalRef, campaignCode, firstName, lastName, email]
  *       properties:
  *         externalRef: { type: string, pattern: "^[A-Za-z0-9._-]{1,64}$", description: "Your own id for this person. Unique per partner and type (HomeChef / customer).", example: fc-chef-00123 }
- *         campaignCode: { type: string, minLength: 4, maxLength: 32, description: "One of your campaign codes (HomeChef code for /homechefs, customer code for /customers).", example: FOODCLINE-CHEF }
+ *         campaignCode: { type: string, minLength: 4, maxLength: 32, description: "One of your campaign codes (HomeChef code for /homechefs, customer code for /customers).", example: FOODCLIME-CHEF }
  *         firstName: { type: string, minLength: 1, maxLength: 100, example: Ada }
  *         lastName: { type: string, minLength: 1, maxLength: 100, example: Obi }
- *         email: { type: string, format: email, maxLength: 255, description: "Must use a domain accepted by TOW signup: gmail.com, yahoo.com, hotmail.com, outlook.com, live.com, icloud.com. Each email can be submitted once per type.", example: ada.obi@gmail.com }
+ *         email: { type: string, format: email, maxLength: 255, description: "Must use a domain accepted by TOW signup: gmail.com, yahoo.com, hotmail.com, outlook.com, live.com, icloud.com, or a Nigerian university domain ending in .edu.ng (e.g. uniabuja.edu.ng). Each email can be submitted once per type.", example: ada.obi@gmail.com }
  *         phoneNumber: { type: string, pattern: "^\\+[1-9]\\d{7,14}$", description: "E.164 international format", example: "+2348012345678" }
  *         state: { type: string, minLength: 1, maxLength: 100, example: Lagos }
  *         city: { type: string, minLength: 1, maxLength: 100, example: Ikeja }
@@ -136,6 +137,42 @@ import { partnerSubmissionSchema } from "../zod-schema/partner.schema.js";
  *         createdAt: "2026-10-02T09:15:00.000Z"
  *         updatedAt: "2026-10-04T10:02:11.000Z"
  *
+ *     PartnerWebhookEvent:
+ *       type: object
+ *       description: >-
+ *         Body of a webhook POST to your endpoint. Verify the signature before
+ *         trusting it (see "Webhooks" in the API description). Respond with
+ *         any 2xx status within 10 seconds; anything else is retried.
+ *       required: [id, type, createdAt, data]
+ *       properties:
+ *         id: { type: string, description: "Unique event id; also sent in the TOW-Webhook-Id header. Use it to ignore duplicates.", example: evt_5b0e2c7d9a41f3e6b8c2d1a0 }
+ *         type: { type: string, enum: [submission.status_changed, ping] }
+ *         createdAt: { type: string, format: date-time }
+ *         data:
+ *           allOf:
+ *             - $ref: "#/components/schemas/PartnerSubmission"
+ *             - type: object
+ *               required: [previousStatus, sequence]
+ *               properties:
+ *                 previousStatus: { type: string, example: pending_review }
+ *                 sequence: { type: integer, minimum: 1, description: "Increases by 1 with every status change of this submission. Ignore an event whose sequence is not higher than the last one you processed." }
+ *       example:
+ *         id: evt_5b0e2c7d9a41f3e6b8c2d1a0
+ *         type: submission.status_changed
+ *         createdAt: "2026-10-12T14:05:09.000Z"
+ *         data:
+ *           submissionId: psub_3f9a1c0b7e2d4a6f8b1c2d3e
+ *           externalRef: fc-user-48213
+ *           type: homechef
+ *           previousStatus: pending_review
+ *           status: inspected
+ *           sequence: 3
+ *           registeredAt: "2026-10-04T10:02:11.000Z"
+ *           onboardingSubmittedAt: "2026-10-05T16:40:00.000Z"
+ *           firstApprovedAt: null
+ *           createdAt: "2026-10-02T09:15:00.000Z"
+ *           updatedAt: "2026-10-12T14:05:09.000Z"
+ *
  *     PartnerSubmissionWithToken:
  *       allOf:
  *         - $ref: "#/components/schemas/PartnerSubmission"
@@ -143,7 +180,7 @@ import { partnerSubmissionSchema } from "../zod-schema/partner.schema.js";
  *           required: [claimToken]
  *           properties:
  *             claimToken: { type: string, description: "Single-use token the person enters in TOW after signing up. Returned only here — store it.", example: Xk3v9Q2LmT7rB1yH5nW8cZ0pJ4dF6gA2sE9uR3tY7iK }
- *             campaignCode: { type: string, example: FOODCLINE-CHEF }
+ *             campaignCode: { type: string, example: FOODCLIME-CHEF }
  *
  *     PartnerSubmissionReplay:
  *       allOf:
@@ -203,8 +240,8 @@ import { partnerSubmissionSchema } from "../zod-schema/partner.schema.js";
  *             partner:
  *               type: object
  *               properties:
- *                 name: { type: string, example: FoodCline / Peace Sustainability }
- *                 slug: { type: string, example: foodcline }
+ *                 name: { type: string, example: FoodClime / Peace Sustainability }
+ *                 slug: { type: string, example: foodclime }
  *                 status: { type: string, enum: [active, suspended] }
  *             credential:
  *               type: object
@@ -229,7 +266,7 @@ import { partnerSubmissionSchema } from "../zod-schema/partner.schema.js";
  *                     items:
  *                       type: object
  *                       properties:
- *                         code: { type: string, example: FOODCLINE-CHEF }
+ *                         code: { type: string, example: FOODCLIME-CHEF }
  *                         audience: { type: string, enum: [vendor, customer, both], description: "vendor = HomeChef" }
  *                         status: { type: string, enum: [active, disabled] }
  *                         expiresAt: { type: string, format: date-time, nullable: true }
@@ -255,11 +292,21 @@ import { partnerSubmissionSchema } from "../zod-schema/partner.schema.js";
  *         application/json:
  *           schema: { $ref: "#/components/schemas/PartnerError" }
  *     PartnerUnauthorized:
- *       description: Missing, malformed, unknown, revoked or expired API key, request from a non-allowed IP, or partner suspended. Always the same response.
+ *       description: >-
+ *         PARTNER_UNAUTHORIZED — missing, malformed, unknown, revoked or
+ *         expired API key, request from a non-allowed IP, or partner
+ *         suspended (always the same response). PARTNER_SIGNATURE_INVALID —
+ *         request signing is required for this key, or a signature was sent
+ *         and is missing a header, stale (more than 300 seconds from server
+ *         time) or does not match; the message says which.
  *       content:
  *         application/json:
  *           schema: { $ref: "#/components/schemas/PartnerError" }
- *           example: { status: error, message: Invalid or missing partner credentials, error: PARTNER_UNAUTHORIZED }
+ *           examples:
+ *             credentials:
+ *               value: { status: error, message: Invalid or missing partner credentials, error: PARTNER_UNAUTHORIZED }
+ *             signature:
+ *               value: { status: error, message: Request signature does not match, error: PARTNER_SIGNATURE_INVALID }
  *     PartnerForbidden:
  *       description: The API key is valid but lacks the scope this endpoint requires.
  *       content:
@@ -379,7 +426,10 @@ import { partnerSubmissionSchema } from "../zod-schema/partner.schema.js";
  *       "500": { $ref: "#/components/responses/PartnerServerError" }
  *   get:
  *     summary: List your HomeChef submissions
- *     description: Requires scope `homechef:read`. Ordered by last update, oldest first; page with nextCursor.
+ *     description: >-
+ *       Requires scope `homechef:read`. Ordered by last update, oldest first;
+ *       page with nextCursor. With updatedSince this is a reliable backup to
+ *       webhooks: every status change moves updatedAt.
  *     tags: [Partner API]
  *     security: [{ partnerApiKey: [] }]
  *     parameters:
@@ -560,7 +610,11 @@ class PartnerRouter {
   constructor() {
     this.router = Router();
     this.controller = new PartnerController();
-    this.router.use(partnerAuthMiddleware, partnerRateLimitMiddleware);
+    this.router.use(
+      partnerAuthMiddleware,
+      partnerSignatureMiddleware,
+      partnerRateLimitMiddleware,
+    );
     this.initializeRoutes();
   }
 

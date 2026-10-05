@@ -1,0 +1,18 @@
+# /etc/cron.d/the-other-wife-backend — install on the droplet with:
+#   sudo cp deploy/cron/the-other-wife-backend /etc/cron.d/the-other-wife-backend
+#   sudo chmod 644 /etc/cron.d/the-other-wife-backend
+# (cron.d files need a trailing newline, no dots in the file name, and are
+# picked up automatically — no restart needed.)
+#
+# Calls the app directly on 127.0.0.1 (the container's published port), so
+# it doesn't depend on DNS, TLS or nginx. CRON_SECRET is read from the env
+# file on every run. Only failures are logged.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Partner status tracking + webhooks, every 5 minutes (production).
+*/5 * * * * root /bin/bash /opt/the-other-wife-backend/scripts/cron-call.sh /opt/the-other-wife-backend/.env.prod http://127.0.0.1:8000 /api/v1/internal/cron/partner-webhooks/run >/dev/null 2>>/var/log/tow-cron.log
+
+# Staging (uncomment once staging is deployed per DEPLOYMENT.md).
+# */5 * * * * root /bin/bash /opt/the-other-wife-backend-staging/scripts/cron-call.sh /opt/the-other-wife-backend-staging/.env.staging http://127.0.0.1:8001 /api/v1/internal/cron/partner-webhooks/run >/dev/null 2>>/var/log/tow-cron-staging.log

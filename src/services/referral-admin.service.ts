@@ -14,25 +14,33 @@ import PartnerCredential, {
   PartnerScope,
 } from "../models/partnerCredential.model.js";
 import ReferralCampaign, {
+  CampaignRules,
   ReferralCampaignDocument,
 } from "../models/referralCampaign.model.js";
+import PartnerSettlement from "../models/partnerSettlement.model.js";
 import ReferralCode from "../models/referralCode.model.js";
 import User from "../models/user.model.js";
 
+import { paginate, Pagination, paginationResult } from "../util/pagination.util.js";
+import {
+  generateSigningSecret,
+  isSecretBoxConfigured,
+  sealSecret,
+} from "../util/secret-box.util.js";
 import {
   attributionLiveState,
+  normalizeIp,
   generatePartnerApiKey,
   generateReferralCode,
   normalizeReferralCode,
 } from "../util/referral.util.js";
 
-type Pagination = { page?: number; limit?: number };
-
-const paginate = ({ page = 1, limit = 20 }: Pagination) => {
-  const safeLimit = Math.min(Math.max(limit, 1), 100);
-  const safePage = Math.max(page, 1);
-  return { safeLimit, safePage, skip: (safePage - 1) * safeLimit };
+type ListResult<T> = {
+  items: T[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
 };
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const notFound = (what: string) =>
   new NotFoundException(
@@ -75,8 +83,22 @@ export class ReferralAdminService {
     }
   };
 
-  listPartners = async () =>
-    Partner.find().sort({ createdAt: -1 }).limit(200).lean();
+  listPartners = async (
+    filters: Pagination & { status?: "active" | "suspended"; search?: string },
+  ): Promise<ListResult<Record<string, unknown>>> => {
+    const { page, limit, skip } = paginate(filters);
+    const query: Record<string, unknown> = {};
+    if (filters.status) query.status = filters.status;
+    if (filters.search) {
+      const pattern = new RegExp(escapeRegex(filters.search), "i");
+      query.$or = [{ name: pattern }, { slug: pattern }];
+    }
+    const [items, total] = await Promise.all([
+      Partner.find(query).select("-webhook.secretCiphertext").sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Partner.countDocuments(query),
+    ]);
+    return { items: items as Array<Record<string, unknown>>, pagination: paginationResult(page, limit, total) };
+  };
 
   getPartner = async (partnerId: string) => {
     assertObjectId(partnerId, "partner");
@@ -142,20 +164,33 @@ export class ReferralAdminService {
       customerAttributionDays?: number;
       claimWindowDays?: number;
       targets?: { homechefs?: number; customers?: number };
+      rules?: CampaignRules;
     },
   ) => {
     await this.validateCampaignShape(body);
     return ReferralCampaign.create({ ...body, createdBy: adminUserId });
   };
 
-  listCampaigns = async (filters: { partnerId?: string; status?: string }) => {
+  listCampaigns = async (
+    filters: Pagination & { partnerId?: string; status?: string },
+  ): Promise<ListResult<Record<string, unknown>>> => {
+    const { page, limit, skip } = paginate(filters);
     const query: Record<string, unknown> = {};
     if (filters.partnerId) {
       assertObjectId(filters.partnerId, "partner");
       query.partnerId = filters.partnerId;
     }
     if (filters.status) query.status = filters.status;
-    return ReferralCampaign.find(query).sort({ createdAt: -1 }).limit(200).lean();
+    const [items, total] = await Promise.all([
+      ReferralCampaign.find(query)
+        .select("-qualificationLockUntil")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      ReferralCampaign.countDocuments(query),
+    ]);
+    return { items: items as Array<Record<string, unknown>>, pagination: paginationResult(page, limit, total) };
   };
 
   getCampaign = async (campaignId: string): Promise<ReferralCampaignDocument> => {
@@ -177,18 +212,56 @@ export class ReferralAdminService {
       customerAttributionDays: number;
       claimWindowDays: number;
       targets: { homechefs?: number; customers?: number };
+      rules: CampaignRules;
+      windowStartsAt: Date | null;
+      windowEndsAt: Date | null;
     }>,
   ) => {
     const campaign = await this.getCampaign(campaignId);
     // customerAttributionDays only affects attributions created AFTER the
     // change — existing attributions keep the expiresAt stamped at claim time.
-    const { endsAt, ...rest } = body;
+    const { endsAt, rules, windowStartsAt, windowEndsAt, ...rest } = body;
+
+    // Money rules are locked once anything has been settled, so a recorded
+    // settlement can never disagree with the campaign's current rules.
+    if (rules !== undefined && (await PartnerSettlement.exists({ campaignId: campaign._id }))) {
+      throw conflict("Campaign rules are locked once a settlement has been finalized");
+    }
+
     Object.assign(campaign, rest);
+    if (rules !== undefined) campaign.set("rules", rules);
     if (endsAt === null) {
       campaign.set("endsAt", undefined);
     } else if (endsAt) {
       campaign.endsAt = endsAt;
     }
+
+    // Admin override of the HomeChef window. Setting only the start derives
+    // the end from rules.homechef.windowDays; null clears (re-opens on the
+    // next approval).
+    if (windowStartsAt === null) {
+      campaign.set("windowStartsAt", undefined);
+      campaign.set("windowEndsAt", undefined);
+    } else if (windowStartsAt) {
+      campaign.windowStartsAt = windowStartsAt;
+      const days = campaign.rules?.homechef?.windowDays;
+      if (windowEndsAt) campaign.windowEndsAt = windowEndsAt;
+      else if (days) campaign.windowEndsAt = new Date(windowStartsAt.getTime() + days * 24 * 60 * 60 * 1000);
+    } else if (windowEndsAt) {
+      campaign.windowEndsAt = windowEndsAt;
+    }
+    if (
+      campaign.windowStartsAt &&
+      campaign.windowEndsAt &&
+      campaign.windowEndsAt.getTime() <= campaign.windowStartsAt.getTime()
+    ) {
+      throw new BadRequestException(
+        "windowEndsAt must be after windowStartsAt",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
     await this.validateCampaignShape(campaign);
     await campaign.save();
     return campaign;
@@ -270,9 +343,19 @@ export class ReferralAdminService {
     throw conflict("Could not generate a unique referral code, please retry");
   };
 
-  listCodes = async (campaignId: string) => {
+  listCodes = async (
+    campaignId: string,
+    filters: Pagination & { status?: "active" | "disabled" },
+  ): Promise<ListResult<Record<string, unknown>>> => {
     await this.getCampaign(campaignId);
-    return ReferralCode.find({ campaignId }).sort({ createdAt: -1 }).lean();
+    const { page, limit, skip } = paginate(filters);
+    const query: Record<string, unknown> = { campaignId };
+    if (filters.status) query.status = filters.status;
+    const [items, total] = await Promise.all([
+      ReferralCode.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      ReferralCode.countDocuments(query),
+    ]);
+    return { items: items as Array<Record<string, unknown>>, pagination: paginationResult(page, limit, total) };
   };
 
   updateCode = async (
@@ -300,6 +383,45 @@ export class ReferralAdminService {
 
   // ── Partner credentials ───────────────────────────────────────────────
 
+  private credentialView = (credential: {
+    keyId: string;
+    label?: string;
+    scopes: PartnerScope[];
+    status: string;
+    expiresAt?: Date;
+    ipAllowlist: string[];
+    requireSignature?: boolean;
+    signingSecretCiphertext?: string;
+    createdAt: Date;
+    lastUsedAt?: Date;
+  }) => ({
+    keyId: credential.keyId,
+    label: credential.label,
+    scopes: credential.scopes,
+    status: credential.status,
+    expiresAt: credential.expiresAt ?? null,
+    ipAllowlist: credential.ipAllowlist,
+    requireSignature: credential.requireSignature === true,
+    hasSigningSecret: !!credential.signingSecretCiphertext,
+    lastUsedAt: credential.lastUsedAt ?? null,
+    createdAt: credential.createdAt,
+  });
+
+  private normalizeAllowlist = (entries: string[] | undefined): string[] => {
+    const normalized = (entries ?? []).map((entry) => {
+      const ip = normalizeIp(entry);
+      if (!ip) {
+        throw new BadRequestException(
+          `Invalid IP address in ipAllowlist: ${entry}`,
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
+      return ip;
+    });
+    return Array.from(new Set(normalized));
+  };
+
   issueCredential = async (
     adminUserId: string,
     partnerId: string,
@@ -308,10 +430,23 @@ export class ReferralAdminService {
       label?: string;
       expiresAt?: Date;
       ipAllowlist?: string[];
+      requireSignature?: boolean;
     },
   ) => {
     const partner = await this.getPartner(partnerId);
     const { keyId, apiKey, secretHash } = generatePartnerApiKey();
+
+    // A request-signing secret is issued alongside the key whenever the
+    // server can store it (PARTNER_SECRETS_KEY set). Requiring signatures
+    // without one is impossible, so that combination is rejected.
+    const signingSecret = isSecretBoxConfigured() ? generateSigningSecret("tow_sk") : null;
+    if (body.requireSignature && !signingSecret) {
+      throw new BadRequestException(
+        "Request signing is unavailable: PARTNER_SECRETS_KEY is not configured on this server",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
 
     const credential = await PartnerCredential.create({
       partnerId: partner._id,
@@ -320,31 +455,88 @@ export class ReferralAdminService {
       label: body.label,
       scopes: Array.from(new Set(body.scopes)),
       expiresAt: body.expiresAt,
-      ipAllowlist: body.ipAllowlist ?? [],
+      ipAllowlist: this.normalizeAllowlist(body.ipAllowlist),
+      requireSignature: body.requireSignature === true,
+      signingSecretCiphertext: signingSecret ? sealSecret(signingSecret) : undefined,
       createdBy: adminUserId,
     });
 
-    // apiKey is returned exactly once — it is not recoverable afterwards.
+    // apiKey and signingSecret are returned exactly once — neither can be
+    // retrieved afterwards.
     return {
       apiKey,
-      credential: {
-        keyId: credential.keyId,
-        label: credential.label,
-        scopes: credential.scopes,
-        status: credential.status,
-        expiresAt: credential.expiresAt ?? null,
-        ipAllowlist: credential.ipAllowlist,
-        createdAt: credential.createdAt,
-      },
+      signingSecret,
+      credential: this.credentialView({
+        ...credential.toObject(),
+        signingSecretCiphertext: credential.signingSecretCiphertext,
+      }),
     };
   };
 
-  listCredentials = async (partnerId: string) => {
+  // Changes signing enforcement and/or the IP allow-list without re-issuing
+  // the key. An empty ipAllowlist removes the IP restriction.
+  updateCredential = async (
+    partnerId: string,
+    keyId: string,
+    body: { requireSignature?: boolean; ipAllowlist?: string[] },
+  ) => {
+    const credential = await PartnerCredential.findOne({ partnerId, keyId }).select(
+      "+signingSecretCiphertext",
+    );
+    if (!credential) throw notFound("Credential");
+    if (credential.status !== "active") {
+      throw conflict("Revoked credentials cannot be changed");
+    }
+    if (body.requireSignature === true && !credential.signingSecretCiphertext) {
+      throw new BadRequestException(
+        "Generate a signing secret for this key before requiring signatures",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+    if (body.requireSignature !== undefined) credential.requireSignature = body.requireSignature;
+    if (body.ipAllowlist !== undefined) credential.ipAllowlist = this.normalizeAllowlist(body.ipAllowlist);
+    await credential.save();
+    return { credential: this.credentialView(credential.toObject()) };
+  };
+
+  // Generates (or replaces) the request-signing secret. The old secret stops
+  // working immediately. Returned once.
+  rotateSigningSecret = async (partnerId: string, keyId: string) => {
+    const credential = await PartnerCredential.findOne({ partnerId, keyId, status: "active" });
+    if (!credential) throw notFound("Credential");
+    const signingSecret = generateSigningSecret("tow_sk");
+    credential.signingSecretCiphertext = sealSecret(signingSecret);
+    await credential.save();
+    return {
+      signingSecret,
+      credential: this.credentialView(credential.toObject()),
+    };
+  };
+
+  listCredentials = async (
+    partnerId: string,
+    filters: Pagination & { status?: "active" | "revoked" },
+  ) => {
     await this.getPartner(partnerId);
-    return PartnerCredential.find({ partnerId })
-      .select("-secretHash")
-      .sort({ createdAt: -1 })
-      .lean();
+    const { page, limit, skip } = paginate(filters);
+    const query: Record<string, unknown> = { partnerId };
+    if (filters.status) query.status = filters.status;
+    // signingSecretCiphertext is loaded only to report hasSigningSecret;
+    // credentialView never returns it.
+    const [credentials, total] = await Promise.all([
+      PartnerCredential.find(query)
+        .select("+signingSecretCiphertext")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      PartnerCredential.countDocuments(query),
+    ]);
+    return {
+      items: credentials.map((credential) => this.credentialView(credential as any)),
+      pagination: paginationResult(page, limit, total),
+    };
   };
 
   revokeCredential = async (
@@ -371,12 +563,10 @@ export class ReferralAdminService {
       partnerId?: string;
       subjectType?: "vendor" | "customer";
       state?: "active" | "expired" | "revoked";
+      qualified?: boolean;
     },
-  ): Promise<{
-    attributions: Array<Record<string, unknown>>;
-    pagination: { page: number; limit: number; total: number; totalPages: number };
-  }> => {
-    const { safeLimit, safePage, skip } = paginate(filters);
+  ): Promise<ListResult<Record<string, unknown>>> => {
+    const { page, limit, skip } = paginate(filters);
     const query: Record<string, unknown> = {};
     if (filters.campaignId) {
       assertObjectId(filters.campaignId, "campaign");
@@ -387,6 +577,9 @@ export class ReferralAdminService {
       query.partnerId = filters.partnerId;
     }
     if (filters.subjectType) query.subjectType = filters.subjectType;
+    if (filters.qualified !== undefined) {
+      query.qualifiedAt = { $exists: filters.qualified };
+    }
 
     const now = new Date();
     if (filters.state === "revoked") {
@@ -404,23 +597,18 @@ export class ReferralAdminService {
         .select("-events")
         .sort({ attributedAt: -1 })
         .skip(skip)
-        .limit(safeLimit)
+        .limit(limit)
         .populate("subjectUserId", "firstName lastName email userType status")
         .lean(),
       Attribution.countDocuments(query),
     ]);
 
     return {
-      attributions: rows.map((row) => ({
+      items: rows.map((row) => ({
         ...row,
         state: attributionLiveState(row as any, now),
       })),
-      pagination: {
-        page: safePage,
-        limit: safeLimit,
-        total,
-        totalPages: Math.max(Math.ceil(total / safeLimit), 1),
-      },
+      pagination: paginationResult(page, limit, total),
     };
   };
 }

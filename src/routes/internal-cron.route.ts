@@ -72,6 +72,29 @@ import { cronAuthMiddleware } from "../middlewares/cron-auth.middleware.js";
  *       "500":
  *         description: CRON_SECRET is not configured on this server
  */
+/**
+ * @swagger
+ * /api/v1/internal/cron/partner-webhooks/run:
+ *   get:
+ *     summary: Detect partner submission status changes and deliver partner webhooks (internal)
+ *     description: >-
+ *       Cron-only endpoint, intended to run every 5 minutes. Requires
+ *       `Authorization: Bearer <CRON_SECRET>`. Compares each partner
+ *       submission's current status with the last recorded one, records
+ *       changes (which also moves updatedAt for partner polling), queues a
+ *       signed submission.status_changed event for partners with an enabled
+ *       webhook, then sends due events with retries. Bounded by a time budget
+ *       so runs can't overlap for long; overlapping runs are safe.
+ *     tags: [Internal]
+ *     security: []
+ *     responses:
+ *       "200":
+ *         description: Counts of checked/changed/queued/delivered/retried/failed events
+ *       "401":
+ *         description: Unauthorized — missing or incorrect CRON_SECRET bearer token
+ *       "500":
+ *         description: CRON_SECRET is not configured on this server
+ */
 class InternalCronRouter {
   private controller: InternalCronController;
   router: Router;
@@ -99,6 +122,11 @@ class InternalCronRouter {
       "/accounts/hard-delete-due",
       cronAuthMiddleware,
       this.controller.hardDeleteDueAccounts,
+    );
+    this.router.get(
+      "/partner-webhooks/run",
+      cronAuthMiddleware,
+      this.controller.runPartnerWebhooks,
     );
   }
 }

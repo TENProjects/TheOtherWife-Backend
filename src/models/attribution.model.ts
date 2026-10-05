@@ -39,6 +39,19 @@ export interface AttributionDocument extends Document {
   // vendor's approvedAt if already approved at claim time). Live Vendor state
   // remains the source of truth for reporting.
   firstApprovedAt?: Date;
+  // Vendors only — set once, permanently, by the qualification job
+  // (services/partner-qualification.service.ts) when the HomeChef first meets
+  // the campaign's successful-HomeChef rule. Never cleared (agreed: success is
+  // not clawed back if the HomeChef is later suspended or rejected).
+  qualifiedAt?: Date;
+  qualificationRank?: number;
+  qualificationTier?: "early" | "standard";
+  qualificationEvidence?: {
+    approvedAt?: Date;
+    inspectionStatus?: string;
+    menuMealId?: string;
+    firstCompletedOrderId?: string;
+  };
   // Who caused this attribution to be recorded.
   actorType: AttributionActorType;
   actorId?: string;
@@ -127,6 +140,21 @@ const AttributionSchema = new Schema(
       default: "active",
     },
     firstApprovedAt: { type: Date, required: false },
+    qualifiedAt: { type: Date, required: false },
+    qualificationRank: { type: Number, required: false, min: 1 },
+    qualificationTier: { type: String, enum: ["early", "standard"], required: false },
+    qualificationEvidence: {
+      type: new Schema(
+        {
+          approvedAt: { type: Date, required: false },
+          inspectionStatus: { type: String, required: false },
+          menuMealId: { type: String, required: false },
+          firstCompletedOrderId: { type: String, required: false },
+        },
+        { _id: false },
+      ),
+      required: false,
+    },
     actorType: {
       type: String,
       enum: ["user", "partner", "admin", "system"],
@@ -140,5 +168,11 @@ const AttributionSchema = new Schema(
 
 AttributionSchema.index({ campaignId: 1, subjectType: 1, attributedAt: 1 });
 AttributionSchema.index({ partnerId: 1, subjectType: 1 });
+// One HomeChef per rank per campaign — a database-level guarantee on top of
+// the qualification job's lease (a rank can never be assigned twice).
+AttributionSchema.index(
+  { campaignId: 1, qualificationRank: 1 },
+  { unique: true, partialFilterExpression: { qualificationRank: { $exists: true } } },
+);
 
 export default model<AttributionDocument>("Attribution", AttributionSchema);
