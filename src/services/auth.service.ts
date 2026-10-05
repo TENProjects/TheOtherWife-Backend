@@ -58,6 +58,21 @@ export const ALLOWED_EMAIL_DOMAINS = new Set([
   "icloud.com",
 ]);
 
+// Nigerian academic institutions (e.g. staff at uniabuja.edu.ng or
+// staff.unilag.edu.ng). Requires at least one label before ".edu.ng", so the
+// bare "edu.ng" and look-alikes such as "fakeedu.ng" are rejected; anchored at
+// the end so "x.edu.ng.evil.com" is rejected too.
+const ACADEMIC_EMAIL_DOMAIN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.edu\.ng$/;
+
+export const isAllowedSignupEmailDomain = (domain: string | undefined): boolean => {
+  if (!domain) return false;
+  const normalized = domain.trim().toLowerCase();
+  return ALLOWED_EMAIL_DOMAINS.has(normalized) || ACADEMIC_EMAIL_DOMAIN.test(normalized);
+};
+
+export const ALLOWED_EMAIL_DESCRIPTION =
+  "Gmail, Yahoo, Hotmail/Outlook, Live, iCloud, or a Nigerian university (.edu.ng) address";
+
 type TrackedEmailFields = {
   statusField:
     | "verificationEmailStatus"
@@ -223,9 +238,9 @@ export class AuthService {
           // so it's enforced here rather than duplicated across zod schemas.
           if (userType !== "admin") {
             const domain = email?.split("@")[1]?.toLowerCase();
-            if (!domain || !ALLOWED_EMAIL_DOMAINS.has(domain)) {
+            if (!isAllowedSignupEmailDomain(domain)) {
               throw new BadRequestException(
-                "Please sign up with an email from a recognized provider (Gmail, Yahoo, Hotmail/Outlook, or iCloud)",
+                `Please sign up with an email from a recognized provider (${ALLOWED_EMAIL_DESCRIPTION})`,
                 HttpStatus.BAD_REQUEST,
                 ErrorCode.VALIDATION_ERROR,
               );
@@ -233,17 +248,25 @@ export class AuthService {
           }
 
           try {
-            const existingUser = await User.findOne({
-              $or: [
-                { ...(email && { email }) },
-                { ...(phoneNumber && { phoneNumber }) },
-              ],
-            }).session(session);
+            // Only check the identifiers that were actually provided. An
+            // omitted phoneNumber previously became an empty `{}` clause in
+            // this $or, matching ANY user — and if that user also had no
+            // phone, `undefined === undefined` wrongly reported "phone number
+            // already exists". Emails are stored lowercased by the User
+            // schema, so the lookup is lowercased too.
+            const normalizedEmail = email?.trim().toLowerCase();
+            const duplicateChecks = [
+              ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
+              ...(phoneNumber ? [{ phoneNumber }] : []),
+            ];
+            const existingUser = duplicateChecks.length
+              ? await User.findOne({ $or: duplicateChecks }).session(session)
+              : null;
 
             const authType = existingUser
-              ? existingUser.email === email
+              ? normalizedEmail && existingUser.email === normalizedEmail
                 ? "email"
-                : existingUser.phoneNumber === phoneNumber
+                : phoneNumber && existingUser.phoneNumber === phoneNumber
                   ? "phone number"
                   : null
               : null;

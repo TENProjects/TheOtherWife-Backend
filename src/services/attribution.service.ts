@@ -418,6 +418,24 @@ export class AttributionService {
   // Subscriber target for the EXISTING vendor.approved signal. Idempotent:
   // only the first approval after attribution is stamped; re-approvals after
   // a suspension never overwrite it.
+  // Agreed rule: a campaign's HomeChef window (rules.homechef.windowDays)
+  // opens at the first approval of one of its HomeChefs. Atomic — only the
+  // first call sets it; an admin-set start date is never overwritten.
+  openHomechefWindowIfNeeded = async (
+    campaignId: mongoose.Types.ObjectId,
+    at: Date,
+  ) => {
+    const campaign = await ReferralCampaign.findById(campaignId)
+      .select("rules windowStartsAt")
+      .lean<{ rules?: { homechef?: { windowDays: number } }; windowStartsAt?: Date }>();
+    const windowDays = campaign?.rules?.homechef?.windowDays;
+    if (!windowDays || campaign?.windowStartsAt) return;
+    await ReferralCampaign.updateOne(
+      { _id: campaignId, windowStartsAt: { $exists: false } },
+      { $set: { windowStartsAt: at, windowEndsAt: addDays(at, windowDays) } },
+    );
+  };
+
   recordVendorApproval = async (vendorId: string, at: Date = new Date()) => {
     if (!mongoose.isValidObjectId(vendorId)) return;
     const vendorObjectId = new mongoose.Types.ObjectId(vendorId);
@@ -435,7 +453,11 @@ export class AttributionService {
         },
       },
       { new: true },
-    ).select("partnerSubmissionId");
+    ).select("partnerSubmissionId campaignId");
+
+    if (attribution) {
+      await this.openHomechefWindowIfNeeded(attribution.campaignId, at);
+    }
 
     if (attribution?.partnerSubmissionId) {
       // Touch the submission so partners polling with updatedSince see it.

@@ -46,6 +46,10 @@ type EnvConfig = {
   // (fail closed). The partner-only docs (/attribution/docs) are not affected.
   DOCS_USERNAME?: string;
   DOCS_PASSWORD?: string;
+  // AES-256-GCM key (32 random bytes, base64) for partner webhook and
+  // request-signing secrets. Read at call time by util/secret-box.util.ts;
+  // optional until a webhook or signed partner credential is configured.
+  PARTNER_SECRETS_KEY?: string;
 };
 
 const getEnvConfig = (): EnvConfig => {
@@ -93,6 +97,7 @@ const getEnvConfig = (): EnvConfig => {
     LEDGER_CHECKPOINT_EMAIL: getEnv("LEDGER_CHECKPOINT_EMAIL"),
     DOCS_USERNAME: getEnv("DOCS_USERNAME"),
     DOCS_PASSWORD: getEnv("DOCS_PASSWORD"),
+    PARTNER_SECRETS_KEY: getEnv("PARTNER_SECRETS_KEY"),
   };
 };
 

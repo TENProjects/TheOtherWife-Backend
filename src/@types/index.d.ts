@@ -18,6 +18,9 @@ declare global {
       credentialId: mongoose.Types.ObjectId;
       keyId: string;
       scopes: string[];
+      // Used only by partnerSignatureMiddleware; never serialized.
+      requireSignature: boolean;
+      signingSecretCiphertext?: string;
     }
 
     interface Request {

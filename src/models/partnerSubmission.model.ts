@@ -34,6 +34,12 @@ export interface PartnerSubmissionDocument extends Document {
   attributionId?: mongoose.Types.ObjectId;
   linkedAt?: Date;
   credentialKeyId: string;
+  // Last partner-facing status observed by the status-checker job
+  // (services/partner-webhook.service.ts). statusSeq increments on every
+  // change and is sent as `sequence` in webhooks so partners can order them.
+  lastStatus?: string;
+  lastStatusChangedAt?: Date;
+  statusSeq: number;
   events: PartnerSubmissionEvent[];
   createdAt: Date;
   updatedAt: Date;
@@ -95,6 +101,9 @@ const PartnerSubmissionSchema = new Schema(
     },
     linkedAt: { type: Date, required: false },
     credentialKeyId: { type: String, required: true },
+    lastStatus: { type: String, required: false },
+    lastStatusChangedAt: { type: Date, required: false },
+    statusSeq: { type: Number, required: true, default: 0, min: 0 },
     events: { type: [PartnerSubmissionEventSchema], default: [] },
   },
   { timestamps: true },

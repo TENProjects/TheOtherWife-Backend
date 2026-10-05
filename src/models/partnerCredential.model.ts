@@ -26,6 +26,12 @@ export interface PartnerCredentialDocument extends Document {
   status: "active" | "revoked";
   expiresAt?: Date;
   ipAllowlist: string[];
+  // Optional HMAC request signing (middlewares/partner-signature.middleware.ts).
+  // When requireSignature is true every request must be signed; otherwise a
+  // signature is verified only if one is sent. The secret is stored
+  // encrypted, never hashed, because the server must recompute the HMAC.
+  requireSignature: boolean;
+  signingSecretCiphertext?: string;
   lastUsedAt?: Date;
   createdBy: mongoose.Types.ObjectId;
   revokedBy?: mongoose.Types.ObjectId;
@@ -55,6 +61,8 @@ const PartnerCredentialSchema = new Schema(
     status: { type: String, enum: ["active", "revoked"], default: "active" },
     expiresAt: { type: Date, required: false },
     ipAllowlist: { type: [String], default: [] },
+    requireSignature: { type: Boolean, default: false },
+    signingSecretCiphertext: { type: String, required: false, select: false },
     lastUsedAt: { type: Date, required: false },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

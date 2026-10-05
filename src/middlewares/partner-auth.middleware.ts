@@ -10,7 +10,12 @@ import Partner from "../models/partner.model.js";
 import PartnerCredential, {
   PartnerScope,
 } from "../models/partnerCredential.model.js";
-import { parsePartnerApiKey, safeEqualHex, sha256Hex } from "../util/referral.util.js";
+import {
+  ipAllowed,
+  parsePartnerApiKey,
+  safeEqualHex,
+  sha256Hex,
+} from "../util/referral.util.js";
 
 const LAST_USED_WRITE_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -18,7 +23,7 @@ const LAST_USED_WRITE_INTERVAL_MS = 5 * 60 * 1000;
 export const partnerCredentialStore = {
   findByKeyId: (keyId: string) =>
     PartnerCredential.findOne({ keyId })
-      .select("+secretHash")
+      .select("+secretHash +signingSecretCiphertext")
       .lean(),
   isPartnerActive: async (partnerId: unknown) => {
     const partner = await Partner.findById(partnerId).select("status").lean();
@@ -69,7 +74,7 @@ export const partnerAuthMiddleware = async (
     if (
       Array.isArray(credential.ipAllowlist) &&
       credential.ipAllowlist.length > 0 &&
-      !credential.ipAllowlist.includes(req.ip ?? "")
+      !ipAllowed(req.ip, credential.ipAllowlist)
     ) {
       throw unauthorized();
     }
@@ -82,6 +87,9 @@ export const partnerAuthMiddleware = async (
       credentialId: credential._id as any,
       keyId: credential.keyId,
       scopes: [...(credential.scopes ?? [])],
+      requireSignature: credential.requireSignature === true,
+      signingSecretCiphertext: (credential as { signingSecretCiphertext?: string })
+        .signingSecretCiphertext,
     };
 
     const lastUsed = credential.lastUsedAt ? new Date(credential.lastUsedAt).getTime() : 0;

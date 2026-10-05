@@ -256,3 +256,226 @@ export const csvEscape = (value: unknown): string => {
   }
   return str;
 };
+
+// ── IP addresses (partner credential allow-lists) ───────────────────────
+
+// Canonical form for comparing IPs: IPv4-mapped IPv6 ("::ffff:1.2.3.4") is
+// reduced to plain IPv4, zone ids ("%eth0") are dropped, and IPv6 is
+// compressed/lowercased via the WHATWG URL parser, so "2001:41D0:0701:1100:0:0:0:E31A"
+// and "2001:41d0:701:1100::e31a" compare equal. Returns null if not an IP.
+export const normalizeIp = (raw: unknown): string | null => {
+  if (typeof raw !== "string") return null;
+  let ip = raw.trim().replace(/^\[|\]$/g, "").split("%")[0].toLowerCase();
+  const mapped = ip.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (mapped) ip = mapped[1];
+
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) {
+    const parts = ip.split(".").map(Number);
+    return parts.every((p) => p >= 0 && p <= 255) ? parts.join(".") : null;
+  }
+  if (!ip.includes(":")) return null;
+  try {
+    const host = new URL(`http://[${ip}]/`).hostname.replace(/^\[|\]$/g, "");
+    // The URL parser renders IPv4-mapped addresses in hex (::ffff:3983:8120).
+    const hexMapped = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (hexMapped) {
+      const hi = parseInt(hexMapped[1], 16);
+      const lo = parseInt(hexMapped[2], 16);
+      return [hi >> 8, hi & 255, lo >> 8, lo & 255].join(".");
+    }
+    return host;
+  } catch {
+    return null;
+  }
+};
+
+export const ipAllowed = (requestIp: unknown, allowlist: string[]): boolean => {
+  const ip = normalizeIp(requestIp);
+  if (!ip) return false;
+  return allowlist.some((entry) => normalizeIp(entry) === ip);
+};
+
+// ── HMAC signatures (partner request signing + outbound webhooks) ───────
+
+export const SIGNATURE_TOLERANCE_SECONDS = 300;
+
+export const hmacSha256Hex = (secret: string, message: string): string =>
+  crypto.createHmac("sha256", secret).update(message, "utf8").digest("hex");
+
+// Inbound partner request signing. One element per line:
+//   <unix timestamp seconds>
+//   <HTTP method, uppercase>
+//   <path + query string exactly as sent, e.g. /api/v1/partner/homechefs?limit=50>
+//   <lowercase hex SHA-256 of the raw request body bytes ("" when there is no body)>
+export const buildRequestSigningString = (params: {
+  timestamp: string;
+  method: string;
+  pathWithQuery: string;
+  rawBody: string;
+}): string =>
+  [
+    params.timestamp,
+    params.method.toUpperCase(),
+    params.pathWithQuery,
+    sha256Hex(params.rawBody),
+  ].join("\n");
+
+// Outbound webhooks: HMAC-SHA256 over "<timestamp>.<raw JSON body>".
+export const buildWebhookSigningString = (timestamp: string, rawBody: string): string =>
+  `${timestamp}.${rawBody}`;
+
+// Parses "v1=<hex>" (comma-separated list allowed; any matching v1 passes).
+export const parseSignatureHeader = (header: unknown): string[] => {
+  if (typeof header !== "string") return [];
+  return header
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith("v1="))
+    .map((part) => part.slice(3).toLowerCase())
+    .filter((hex) => /^[a-f0-9]{64}$/.test(hex));
+};
+
+export const isTimestampFresh = (
+  timestamp: unknown,
+  nowMs: number = Date.now(),
+  toleranceSeconds: number = SIGNATURE_TOLERANCE_SECONDS,
+): boolean => {
+  if (typeof timestamp !== "string" || !/^\d{1,12}$/.test(timestamp)) return false;
+  return Math.abs(nowMs / 1000 - Number(timestamp)) <= toleranceSeconds;
+};
+
+// ── Weeks (Mon 00:00 – Sun 23:59:59.999 WAT) ────────────────────────────
+//
+// West Africa Time is UTC+1 all year (no DST), so a WAT week is a fixed
+// UTC interval: Monday 00:00 WAT = Sunday 23:00 UTC.
+
+export const WAT_OFFSET_MS = 60 * 60 * 1000;
+export const WEEK_MS = 7 * DAY_MS;
+
+// The UTC instant at which the WAT week containing `at` starts.
+export const watWeekStart = (at: Date): Date => {
+  const local = new Date(at.getTime() + WAT_OFFSET_MS);
+  const daysSinceMonday = (local.getUTCDay() + 6) % 7;
+  const midnightLocal = Date.UTC(
+    local.getUTCFullYear(),
+    local.getUTCMonth(),
+    local.getUTCDate() - daysSinceMonday,
+  );
+  return new Date(midnightLocal - WAT_OFFSET_MS);
+};
+
+// "YYYY-MM-DD" (a Monday, in WAT) → week start instant; null if invalid or
+// not a Monday.
+export const parseWatWeekStart = (value: unknown): Date | null => {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [y, m, d] = value.split("-").map(Number);
+  const localMidnight = Date.UTC(y, m - 1, d);
+  const check = new Date(localMidnight);
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== m - 1 || check.getUTCDate() !== d) {
+    return null;
+  }
+  if (check.getUTCDay() !== 1) return null;
+  return new Date(localMidnight - WAT_OFFSET_MS);
+};
+
+// Week start instant → its WAT calendar date "YYYY-MM-DD".
+export const formatWatDate = (at: Date): string =>
+  new Date(at.getTime() + WAT_OFFSET_MS).toISOString().slice(0, 10);
+
+const watMonthKey = (at: Date): string =>
+  new Date(at.getTime() + WAT_OFFSET_MS).toISOString().slice(0, 7);
+
+const daysInMonth = (monthKey: string): number => {
+  const [y, m] = monthKey.split("-").map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+};
+
+// Platform cost attributable to [start, end): each WAT day costs
+// (that month's amount ÷ days in that month). Months without an entry are
+// reported in missingMonths (and contribute 0).
+export const platformCostForRange = (
+  start: Date,
+  end: Date,
+  monthlyAmounts: Map<string, number>,
+): { cost: number; missingMonths: string[] } => {
+  let cost = 0;
+  const missing = new Set<string>();
+  for (let t = start.getTime(); t < end.getTime(); t += DAY_MS) {
+    const month = watMonthKey(new Date(t));
+    const amount = monthlyAmounts.get(month);
+    if (amount === undefined) {
+      missing.add(month);
+      continue;
+    }
+    cost += amount / daysInMonth(month);
+  }
+  return { cost, missingMonths: Array.from(missing).sort() };
+};
+
+export const monthsInRange = (start: Date, end: Date): string[] => {
+  const months = new Set<string>();
+  for (let t = start.getTime(); t < end.getTime(); t += DAY_MS) {
+    months.add(watMonthKey(new Date(t)));
+  }
+  return Array.from(months).sort();
+};
+
+// ── Money ────────────────────────────────────────────────────────────────
+
+export const roundMoney = (value: number): number =>
+  Math.round((value + Number.EPSILON) * 100) / 100;
+
+// TOW's earned amount on one order (agreed definition): the 20% platform fee
+// on the food subtotal + the service charge − the Paystack fee TOW absorbs.
+// VAT (taxAmount) is excluded — it is owed to the government. Can be
+// negative on very small orders; kept as-is so totals stay truthful.
+export const towEarnedOnOrder = (parts: {
+  platformFee: number;
+  serviceCharge: number;
+  paystackFee: number;
+}): number =>
+  (parts.platformFee || 0) + (parts.serviceCharge || 0) - (parts.paystackFee || 0);
+
+// Weekly partner payout:
+//   share          = partnerEarned × sharePercent / 100
+//   allocatedCost  = periodCost × clamp(partnerEarned ÷ totalEarned, 0..1)
+//   net            = share − allocatedCost + adjustments (negative = owed back)
+//   payout         = max(0, net); a negative net is carried forward.
+export const computePartnerPayout = (params: {
+  partnerEarned: number;
+  totalEarned: number;
+  sharePercent: number;
+  periodCost: number;
+  deductPlatformCost: boolean;
+  adjustmentsTotal: number;
+}) => {
+  const share = (params.partnerEarned * params.sharePercent) / 100;
+  const costShare =
+    params.deductPlatformCost && params.totalEarned > 0
+      ? Math.min(Math.max(params.partnerEarned / params.totalEarned, 0), 1)
+      : 0;
+  const allocatedCost = params.periodCost * costShare;
+  const net = share - allocatedCost + params.adjustmentsTotal;
+  return {
+    partnerEarned: roundMoney(params.partnerEarned),
+    totalEarned: roundMoney(params.totalEarned),
+    share: roundMoney(share),
+    costSharePercent: roundMoney(costShare * 100),
+    periodCost: roundMoney(params.periodCost),
+    allocatedCost: roundMoney(allocatedCost),
+    adjustmentsTotal: roundMoney(params.adjustmentsTotal),
+    net: roundMoney(net),
+    payout: roundMoney(Math.max(0, net)),
+    carryForward: roundMoney(Math.min(0, net)),
+  };
+};
+
+// HomeChef batch n covers ranks [(n−1)·size + 1, n·size], within the cap.
+export const homechefBatchRange = (batchNumber: number, batchSize: number, cap: number) => {
+  const from = (batchNumber - 1) * batchSize + 1;
+  const to = Math.min(batchNumber * batchSize, cap);
+  return { from, to, size: Math.max(0, to - from + 1) };
+};
+
+export const homechefBatchCount = (batchSize: number, cap: number): number =>
+  batchSize > 0 ? Math.ceil(cap / batchSize) : 0;

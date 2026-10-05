@@ -27,10 +27,86 @@ export interface ReferralCampaignDocument extends Document {
     homechefs?: number;
     customers?: number;
   };
+  // Commercial rules agreed for this campaign. Optional: a campaign without
+  // them is tracked but has no qualification or settlement (internal
+  // referrals, plain marketing campaigns). Nothing here is partner-specific.
+  rules?: CampaignRules;
+  // The HomeChef target window. Opened automatically at the first approval
+  // of a campaign HomeChef (rules.homechef.windowDays long); an admin may
+  // override both dates.
+  windowStartsAt?: Date;
+  windowEndsAt?: Date;
+  // Atomic rank counter for successful HomeChefs (1-based, gapless).
+  qualifiedCount: number;
+  // Lease so only one job run assigns qualification ranks at a time.
+  qualificationLockUntil?: Date;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
+
+export type HomechefRules = {
+  // The first N HomeChefs to meet the base rule (approved + inspection
+  // completed + published menu) qualify on it alone.
+  earlyTierSize: number;
+  requireInspection: boolean;
+  requireMenu: boolean;
+  // After the early tier, also this many completed (delivered + paid) orders.
+  completedOrdersAfterEarlyTier: number;
+  payoutPerHomechef: number;
+  settlementBatchSize: number;
+  // Only the first N successful HomeChefs (by rank) are payable.
+  payableCap: number;
+  windowDays: number;
+};
+
+export type CustomerRules = {
+  // Partner share of TOW's earned amount on attributed paid orders.
+  revenueSharePercent: number;
+  // Deduct a share of platform infrastructure cost (PlatformCost) from it.
+  deductPlatformCost: boolean;
+};
+
+export type ActiveRules = {
+  minCompletedOrdersPerWeek: number;
+  internalTargetPerWeek: number;
+};
+
+export type CampaignRules = {
+  homechef?: HomechefRules;
+  customer?: CustomerRules;
+  active?: ActiveRules;
+};
+
+const HomechefRulesSchema = new Schema(
+  {
+    earlyTierSize: { type: Number, required: true, min: 0, max: 100000 },
+    requireInspection: { type: Boolean, required: true, default: true },
+    requireMenu: { type: Boolean, required: true, default: true },
+    completedOrdersAfterEarlyTier: { type: Number, required: true, min: 0, max: 1000 },
+    payoutPerHomechef: { type: Number, required: true, min: 0 },
+    settlementBatchSize: { type: Number, required: true, min: 1, max: 10000 },
+    payableCap: { type: Number, required: true, min: 0 },
+    windowDays: { type: Number, required: true, min: 1, max: 3650 },
+  },
+  { _id: false },
+);
+
+const CustomerRulesSchema = new Schema(
+  {
+    revenueSharePercent: { type: Number, required: true, min: 0, max: 100 },
+    deductPlatformCost: { type: Boolean, required: true, default: false },
+  },
+  { _id: false },
+);
+
+const ActiveRulesSchema = new Schema(
+  {
+    minCompletedOrdersPerWeek: { type: Number, required: true, min: 1, max: 1000 },
+    internalTargetPerWeek: { type: Number, required: true, min: 1, max: 1000 },
+  },
+  { _id: false },
+);
 
 const ReferralCampaignSchema = new Schema(
   {
@@ -84,6 +160,21 @@ const ReferralCampaignSchema = new Schema(
       default: {},
       _id: false,
     },
+    rules: {
+      type: new Schema(
+        {
+          homechef: { type: HomechefRulesSchema, required: false },
+          customer: { type: CustomerRulesSchema, required: false },
+          active: { type: ActiveRulesSchema, required: false },
+        },
+        { _id: false },
+      ),
+      required: false,
+    },
+    windowStartsAt: { type: Date, required: false },
+    windowEndsAt: { type: Date, required: false },
+    qualifiedCount: { type: Number, required: true, default: 0, min: 0 },
+    qualificationLockUntil: { type: Date, required: false },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
