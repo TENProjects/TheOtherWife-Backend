@@ -754,10 +754,26 @@ export class AuthService {
         }).session(session);
 
         if (!user) {
+          // Same status (404) as before so existing clients behave unchanged;
+          // the error code tells a newer client *why* the session ended.
+          // Accounts hold one session at a time: a still-valid stored token
+          // that differs from this one means a newer login (another device)
+          // replaced this session. Otherwise it expired or was logged out.
+          const current = await User.findById(decoded._id)
+            .select("refreshToken refreshTokenExpiry")
+            .session(session);
+          const replaced =
+            !!current?.refreshToken &&
+            current.refreshToken !== refreshToken &&
+            !!current.refreshTokenExpiry &&
+            current.refreshTokenExpiry > new Date();
+
           throw new NotFoundException(
-            "Session expired",
+            replaced
+              ? "You were signed in on another device. Please log in again."
+              : "Session expired",
             HttpStatus.NOT_FOUND,
-            ErrorCode.AUTH_INVALID_TOKEN,
+            replaced ? ErrorCode.AUTH_SESSION_REPLACED : ErrorCode.AUTH_INVALID_TOKEN,
           );
         }
 

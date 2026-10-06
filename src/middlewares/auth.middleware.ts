@@ -7,7 +7,7 @@ import { ErrorCode } from "../enums/error-code.enum.js";
 
 import { jwtSecret } from "../constants/env.js";
 
-import { verifyToken } from "../util/generate-token.util.js";
+import { extractAccessToken, verifyToken } from "../util/generate-token.util.js";
 import { UserDocument } from "../models/user.model.js";
 import User from "../models/user.model.js";
 
@@ -16,7 +16,7 @@ export const authMiddleware = async (
   res: Response,
   next: NextFunction,
 ) => {
-  const accessToken = req.cookies?.token;
+  const accessToken = extractAccessToken(req);
 
   if (!accessToken) {
     throw new UnauthorizedExceptionError(
