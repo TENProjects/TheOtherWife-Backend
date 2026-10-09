@@ -60,11 +60,21 @@ export type HomechefRules = {
   windowDays: number;
 };
 
+// How the platform cost attributable to the partner's orders is deducted:
+//  - partner_absorbs: the partner bears all of it (payout = share − cost).
+//  - proportional:    cost is shared in the same ratio as earnings, i.e. a true
+//                     profit split (payout = share% × (earned − cost)).
+export const COST_SHARING_MODES = ["partner_absorbs", "proportional"] as const;
+export type CostSharingMode = (typeof COST_SHARING_MODES)[number];
+export const DEFAULT_COST_SHARING: CostSharingMode = "partner_absorbs";
+
 export type CustomerRules = {
   // Partner share of TOW's earned amount on attributed paid orders.
   revenueSharePercent: number;
   // Deduct a share of platform infrastructure cost (PlatformCost) from it.
   deductPlatformCost: boolean;
+  // Absent on campaigns created before this field existed → partner_absorbs.
+  costSharing?: CostSharingMode;
 };
 
 export type ActiveRules = {
@@ -96,6 +106,12 @@ const CustomerRulesSchema = new Schema(
   {
     revenueSharePercent: { type: Number, required: true, min: 0, max: 100 },
     deductPlatformCost: { type: Boolean, required: true, default: false },
+    costSharing: {
+      type: String,
+      enum: COST_SHARING_MODES,
+      required: false,
+      default: DEFAULT_COST_SHARING,
+    },
   },
   { _id: false },
 );

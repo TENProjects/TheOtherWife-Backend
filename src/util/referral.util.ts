@@ -1,6 +1,7 @@
 /** @format */
 
 import crypto from "crypto";
+import type { CostSharingMode } from "../models/referralCampaign.model.js";
 
 // Pure helpers for the referral/attribution core and the partner API. Kept
 // free of any database access so they can be unit-tested in isolation.
@@ -439,7 +440,12 @@ export const towEarnedOnOrder = (parts: {
 // Weekly partner payout:
 //   share          = partnerEarned × sharePercent / 100
 //   allocatedCost  = periodCost × clamp(partnerEarned ÷ totalEarned, 0..1)
-//   net            = share − allocatedCost + adjustments (negative = owed back)
+//                    (the platform cost attributable to the partner's orders)
+//   costDeducted   = partner_absorbs: allocatedCost (partner bears all of it)
+//                    proportional:    allocatedCost × sharePercent / 100, so
+//                    payout = sharePercent × (partnerEarned − allocatedCost),
+//                    a true profit split
+//   net            = share − costDeducted + adjustments (negative = owed back)
 //   payout         = max(0, net); a negative net is carried forward.
 export const computePartnerPayout = (params: {
   partnerEarned: number;
@@ -448,14 +454,18 @@ export const computePartnerPayout = (params: {
   periodCost: number;
   deductPlatformCost: boolean;
   adjustmentsTotal: number;
+  costSharing?: CostSharingMode;
 }) => {
+  const costSharing: CostSharingMode = params.costSharing ?? "partner_absorbs";
   const share = (params.partnerEarned * params.sharePercent) / 100;
   const costShare =
     params.deductPlatformCost && params.totalEarned > 0
       ? Math.min(Math.max(params.partnerEarned / params.totalEarned, 0), 1)
       : 0;
   const allocatedCost = params.periodCost * costShare;
-  const net = share - allocatedCost + params.adjustmentsTotal;
+  const costDeducted =
+    costSharing === "proportional" ? (allocatedCost * params.sharePercent) / 100 : allocatedCost;
+  const net = share - costDeducted + params.adjustmentsTotal;
   return {
     partnerEarned: roundMoney(params.partnerEarned),
     totalEarned: roundMoney(params.totalEarned),
@@ -463,6 +473,7 @@ export const computePartnerPayout = (params: {
     costSharePercent: roundMoney(costShare * 100),
     periodCost: roundMoney(params.periodCost),
     allocatedCost: roundMoney(allocatedCost),
+    costDeducted: roundMoney(costDeducted),
     adjustmentsTotal: roundMoney(params.adjustmentsTotal),
     net: roundMoney(net),
     payout: roundMoney(Math.max(0, net)),

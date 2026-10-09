@@ -1,6 +1,7 @@
 /** @format */
 
 import mongoose, { Document, Schema, model } from "mongoose";
+import { COST_SHARING_MODES, type CostSharingMode } from "./referralCampaign.model.js";
 
 // A finalized (and later paid) partner settlement. Two kinds:
 //  - customer_weekly: one Mon–Sun (WAT) week of the partner's share of TOW
@@ -23,6 +24,10 @@ export interface PartnerSettlementDocument extends Document {
   lines: Array<Record<string, unknown>>;
   adjustments: Array<Record<string, unknown>>;
   totals: Record<string, number>;
+  // customer_weekly only: the campaign's cost-sharing rule when this week was
+  // finalized. Absent on statements finalized before the field existed, which
+  // all used partner_absorbs.
+  costSharing?: CostSharingMode;
   // Amount carried into the next weekly statement when the payout would be
   // negative (customer_weekly only).
   carryForward: number;
@@ -57,6 +62,7 @@ const PartnerSettlementSchema = new Schema(
     lines: { type: [Schema.Types.Mixed], default: [] },
     adjustments: { type: [Schema.Types.Mixed], default: [] },
     totals: { type: Schema.Types.Mixed, required: true },
+    costSharing: { type: String, enum: COST_SHARING_MODES, required: false },
     carryForward: { type: Number, required: true, default: 0 },
     finalizedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     finalizedAt: { type: Date, required: true },

@@ -2,6 +2,7 @@
 
 import z from "zod";
 import { PARTNER_SCOPES } from "../models/partnerCredential.model.js";
+import { COST_SHARING_MODES, DEFAULT_COST_SHARING } from "../models/referralCampaign.model.js";
 
 const objectId = z.string().trim().regex(/^[a-f0-9]{24}$/i, "Invalid id");
 const isoDate = z.coerce.date();
@@ -66,6 +67,9 @@ const homechefRules = z.strictObject({
 const customerRules = z.strictObject({
   revenueSharePercent: z.number().min(0).max(100),
   deductPlatformCost: z.boolean(),
+  // "proportional" = a true profit split: platform cost is shared in the same
+  // ratio as earnings. Omitted → partner_absorbs (the original behaviour).
+  costSharing: z.enum(COST_SHARING_MODES).default(DEFAULT_COST_SHARING),
 });
 const activeRules = z
   .strictObject({

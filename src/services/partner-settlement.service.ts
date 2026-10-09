@@ -16,6 +16,7 @@ import PartnerSettlement, {
 import Payment from "../models/payment.model.js";
 import PlatformCost from "../models/platformCost.model.js";
 import ReferralCampaign, {
+  DEFAULT_COST_SHARING,
   ReferralCampaignDocument,
 } from "../models/referralCampaign.model.js";
 import User from "../models/user.model.js";
@@ -273,6 +274,7 @@ export class PartnerSettlementService {
       new Map(costs.map((c) => [c.month, c.amount])),
     );
     const totalEarned = rules.deductPlatformCost ? await this.platformEarnedForRange(start, end) : 0;
+    const costSharing = rules.costSharing ?? DEFAULT_COST_SHARING;
 
     const totals = computePartnerPayout({
       partnerEarned,
@@ -281,6 +283,7 @@ export class PartnerSettlementService {
       periodCost,
       deductPlatformCost: rules.deductPlatformCost,
       adjustmentsTotal,
+      costSharing,
     });
 
     // Finalize rules: week ended, not already finalized, strictly the week
@@ -316,6 +319,7 @@ export class PartnerSettlementService {
       week: { weekStart: formatWatDate(start), start, end },
       sharePercent: rules.revenueSharePercent,
       deductPlatformCost: rules.deductPlatformCost,
+      costSharing,
       lines,
       adjustments,
       totals: { ...totals, orders: lines.length },
@@ -382,7 +386,8 @@ export class PartnerSettlementService {
         state: recorded.status,
         settlement: this.settlementView(recorded),
         week: { weekStart: formatWatDate(start), start, end },
-        totals: recorded.totals,
+        costSharing: this.recordedCostSharing(recorded),
+        totals: this.recordedTotals(recorded),
         adjustments: recorded.adjustments,
         canFinalize: false,
         blockers: ["This week is already finalized"],
@@ -398,6 +403,7 @@ export class PartnerSettlementService {
       week: computed.week,
       sharePercent: computed.sharePercent,
       deductPlatformCost: computed.deductPlatformCost,
+      costSharing: computed.costSharing,
       totals: computed.totals,
       adjustments: computed.adjustments,
       missingCostMonths: computed.missingCostMonths,
@@ -427,6 +433,7 @@ export class PartnerSettlementService {
         lines: computed.lines,
         adjustments: computed.adjustments,
         totals: { ...computed.totals, sharePercent: computed.sharePercent },
+        costSharing: computed.costSharing,
         carryForward: computed.totals.carryForward,
         finalizedBy: adminUserId,
         finalizedAt: new Date(),
@@ -617,6 +624,16 @@ export class PartnerSettlementService {
 
   // ── Recorded settlements ──────────────────────────────────────────────
 
+  // Weekly statements finalized before cost sharing was configurable all used
+  // partner_absorbs, where the cost deducted equals the allocated cost.
+  private recordedCostSharing = (s: PartnerSettlementDocument | Record<string, any>) =>
+    s.type === "customer_weekly" ? (s.costSharing ?? DEFAULT_COST_SHARING) : null;
+
+  private recordedTotals = (s: PartnerSettlementDocument | Record<string, any>) =>
+    s.type === "customer_weekly" && s.totals && s.totals.costDeducted === undefined
+      ? { ...s.totals, costDeducted: s.totals.allocatedCost ?? 0 }
+      : s.totals;
+
   private settlementView = (s: PartnerSettlementDocument | Record<string, any>) => ({
     settlementId: s.publicId,
     type: s.type,
@@ -626,7 +643,8 @@ export class PartnerSettlementService {
     periodEnd: s.periodEnd ?? null,
     batchNumber: s.batchNumber ?? null,
     currency: s.currency,
-    totals: s.totals,
+    costSharing: this.recordedCostSharing(s),
+    totals: this.recordedTotals(s),
     adjustments: s.adjustments ?? [],
     carryForward: s.carryForward ?? 0,
     lineCount: (s.lines ?? []).length,
