@@ -16,6 +16,8 @@ import PartnerSettlement, {
 import PartnerSubmission from "../models/partnerSubmission.model.js";
 import Payment from "../models/payment.model.js";
 import ReferralCampaign, {
+  CostSharingMode,
+  DEFAULT_COST_SHARING,
   ReferralCampaignDocument,
 } from "../models/referralCampaign.model.js";
 import User from "../models/user.model.js";
@@ -42,8 +44,10 @@ type ObjectId = mongoose.Types.ObjectId;
 //                          customer paid).
 //  - TOW earned (order)  = 20% platform fee + service charge − Paystack fee.
 //  - Commission          = rules.customer.revenueSharePercent of TOW earned
-//                          (NOT of purchase value). Platform cost is deducted
-//                          later, in the weekly statement.
+//                          (NOT of purchase value), BEFORE platform cost. The
+//                          cost is deducted in the weekly statement: in full
+//                          (costSharing "partner_absorbs") or in the same
+//                          ratio as the share ("proportional" = profit split).
 //  - HomeChef incentive  = rules.homechef.payoutPerHomechef per SUCCESSFUL
 //                          HomeChef within the payable cap.
 // Qualifying order: paymentStatus "paid", status not "cancelled", paidAt
@@ -243,6 +247,27 @@ export class PartnershipDashboardService {
 
   private sharePercent = (campaign: ReferralCampaignDocument) =>
     campaign.rules?.customer?.revenueSharePercent ?? 0;
+
+  private costSharing = (campaign: ReferralCampaignDocument): CostSharingMode =>
+    campaign.rules?.customer?.costSharing ?? DEFAULT_COST_SHARING;
+
+  // Plain-English rule shown to admins (Customers banner, info tooltips).
+  private commissionRuleText = (campaign: ReferralCampaignDocument) => {
+    const pct = this.sharePercent(campaign);
+    const earned = "TOW's earnings (the 20% platform fee plus service charge, less the Paystack fee)";
+    if (!campaign.rules?.customer?.deductPlatformCost) {
+      return `Commission: ${pct}% of ${earned} on qualifying purchases.`;
+    }
+    return this.costSharing(campaign) === "proportional"
+      ? `Commission: ${pct}% of TOW's profit on qualifying purchases: ${earned}, minus the platform running cost for those orders. Settled in the weekly statement.`
+      : `Commission: ${pct}% of ${earned} on qualifying purchases. The platform running cost for those orders is deducted in the weekly statement.`;
+  };
+
+  // Cost actually taken off a finalized weekly statement. Statements finalized
+  // before cost sharing was configurable have no costDeducted; they all used
+  // partner_absorbs, where it equals the allocated cost.
+  private statementCostDeducted = (s: PartnerSettlementDocument) =>
+    s.totals?.costDeducted ?? s.totals?.allocatedCost ?? 0;
 
   // Campaign-wide customer totals (optionally restricted to a paidAt range).
   private customerTotals = async (campaign: ReferralCampaignDocument & { _id: ObjectId }, paidRange: DateRange = {}) => {
@@ -794,7 +819,8 @@ export class PartnershipDashboardService {
       },
       commissionRule: {
         sharePercent: pct,
-        text: `Commission: ${pct}% of TOW's earnings on qualifying purchases (the 20% platform fee plus service charge, less the Paystack fee). Platform cost is deducted in the weekly statement.`,
+        costSharing: this.costSharing(campaign),
+        text: this.commissionRuleText(campaign),
       },
       tabs: { all: counts.all, purchased: counts.purchased, noPurchase: counts.all - counts.purchased },
       items: (result?.page ?? []).map((row) => ({
@@ -896,7 +922,7 @@ export class PartnershipDashboardService {
     const customerStatements = settlements.filter((s) => s.type === "customer_weekly");
     const paid = settlements.filter((s) => s.status === "paid");
     const pending = settlements.filter((s) => s.status === "finalized");
-    const costDeducted = sum(customerStatements, (s) => s.totals?.allocatedCost ?? 0);
+    const costDeducted = sum(customerStatements, this.statementCostDeducted);
     const grossEarned = roundMoney(incentives.amount + customers.commission);
     const paidOut = sum(paid, (s) => s.totals?.payout ?? 0);
     const pendingPayout = sum(pending, (s) => s.totals?.payout ?? 0);
@@ -915,7 +941,9 @@ export class PartnershipDashboardService {
           sharePercent: customers.sharePercent,
           towEarned: customers.towEarned,
           purchaseValue: customers.purchaseValue,
-          caption: `${customers.sharePercent}% of ₦${customers.towEarned.toLocaleString("en-NG")} TOW earned`,
+          caption: `${customers.sharePercent}% of ₦${customers.towEarned.toLocaleString("en-NG")} TOW earned, before running costs`,
+          costSharing: this.costSharing(campaign),
+          rule: this.commissionRuleText(campaign),
         },
         totalEarned: grossEarned,
         platformCostDeducted: costDeducted,

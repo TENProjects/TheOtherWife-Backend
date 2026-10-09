@@ -67,8 +67,13 @@ import {
  *         customer:
  *           type: object
  *           properties:
- *             revenueSharePercent: { type: number, example: 10, description: Share of TOW earned (20% platform fee + service charge - Paystack fee) }
- *             deductPlatformCost: { type: boolean, example: true }
+ *             revenueSharePercent: { type: number, example: 50, description: "Partner share of TOW earned (20% platform fee + service charge - Paystack fee)" }
+ *             deductPlatformCost: { type: boolean, example: true, description: Deduct the platform running cost attributable to the partner's orders }
+ *             costSharing:
+ *               type: string
+ *               enum: [partner_absorbs, proportional]
+ *               default: partner_absorbs
+ *               description: "partner_absorbs: the partner bears all of that cost (payout = share - cost). proportional: the cost is shared in the same ratio as earnings, a true profit split (payout = share% x (TOW earned - cost)). Locked, like all rules, once a settlement is finalized."
  *         active:
  *           type: object
  *           properties:

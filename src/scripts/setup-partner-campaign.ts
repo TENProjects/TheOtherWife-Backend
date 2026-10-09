@@ -21,7 +21,7 @@ import mongoose from "mongoose";
 
 import { envconfig } from "../config/env.config.js";
 import Partner from "../models/partner.model.js";
-import ReferralCampaign from "../models/referralCampaign.model.js";
+import ReferralCampaign, { type CampaignRules } from "../models/referralCampaign.model.js";
 import ReferralCode from "../models/referralCode.model.js";
 import User from "../models/user.model.js";
 import { referralAdminService } from "../services/referral-admin.service.js";
@@ -35,7 +35,7 @@ const arg = (name: string, fallback?: string) => {
 const dryRun = args.includes("--dry-run");
 
 // The agreed rules (business confirmation, Oct 2026).
-const AGREED_RULES = {
+const AGREED_RULES: CampaignRules = {
   homechef: {
     earlyTierSize: 100,
     requireInspection: true,
@@ -46,7 +46,9 @@ const AGREED_RULES = {
     payableCap: 1000,
     windowDays: 90,
   },
-  customer: { revenueSharePercent: 10, deductPlatformCost: true },
+  // 50/50 split of TOW's profit: TOW earned minus the platform running cost
+  // for the partner's orders, halved (business confirmation, Oct 2026).
+  customer: { revenueSharePercent: 50, deductPlatformCost: true, costSharing: "proportional" },
   active: { minCompletedOrdersPerWeek: 1, internalTargetPerWeek: 2 },
 };
 
