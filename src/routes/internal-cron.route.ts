@@ -128,6 +128,11 @@ class InternalCronRouter {
       cronAuthMiddleware,
       this.controller.runPartnerWebhooks,
     );
+    this.router.get(
+      "/orders/expire-unpaid",
+      cronAuthMiddleware,
+      this.controller.expireUnpaidOrders,
+    );
   }
 }
 

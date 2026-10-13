@@ -1,6 +1,8 @@
 /** @format */
 
 import { ClientSession } from "mongoose";
+import { customerVisibleOrderFilter, UNPAID_CANCELLATION_REASON, vendorVisibleOrderFilter } from "../util/order-visibility.util.js";
+import { financeAggregationService } from "./finance-aggregation.service.js";
 import User from "../models/user.model.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
 import { HttpStatus } from "../config/http.config.js";
@@ -16,6 +18,20 @@ import Payment from "../models/payment.model.js";
 import { AuthService } from "./auth.service.js";
 import { NotificationService } from "./notification.service.js";
 import { PushNotificationService } from "./push-notification.service.js";
+
+// Paid orders that count as revenue: a payment that only arrived after its
+// checkout had expired is refunded, never revenue.
+const PAID_ORDER_REVENUE_MATCH = {
+  paymentStatus: "paid",
+  cancellationReason: { $ne: UNPAID_CANCELLATION_REASON },
+};
+
+// Bucket by when the money arrived (paidAt); older orders without paidAt
+// fall back to createdAt.
+const paidInRange = (from: Date, to?: Date) => {
+  const range = to ? { $gte: from, $lt: to } : { $gte: from };
+  return { $or: [{ paidAt: range }, { paidAt: null, createdAt: range }] };
+};
 
 export class UserService {
   private authService = new AuthService();
@@ -192,7 +208,8 @@ export class UserService {
       orders: number;
       totalSpent: number;
     }>([
-      { $match: { customerId: { $in: customerUserIds } } },
+      // Real orders only (what the customer sees in their history).
+      { $match: { customerId: { $in: customerUserIds }, ...customerVisibleOrderFilter() } },
       {
         $group: {
           _id: "$customerId",
@@ -461,7 +478,10 @@ export class UserService {
       );
       location = (customer?.addressId as any)?.city ?? null;
       verified = user.isEmailVerified;
-      totalOrders = await Order.countDocuments({ customerId: user._id });
+      totalOrders = await Order.countDocuments({
+        customerId: user._id,
+        ...customerVisibleOrderFilter(),
+      });
     } else if (user.userType === "vendor") {
       const vendor = await Vendor.findOne({ userId: user._id }).populate(
         "addressId",
@@ -470,7 +490,10 @@ export class UserService {
       verified = vendor?.approvalStatus === "approved";
       vendorBusinessName = vendor?.businessName ?? null;
       totalOrders = vendor
-        ? await Order.countDocuments({ vendorId: vendor._id })
+        ? await Order.countDocuments({
+            vendorId: vendor._id,
+            ...vendorVisibleOrderFilter(),
+          })
         : 0;
     }
 
@@ -550,30 +573,32 @@ export class UserService {
         status: { $ne: "deleted" },
         createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth },
       }),
-      Order.countDocuments(),
-      Order.countDocuments({ createdAt: { $gte: startOfThisMonth } }),
+      // Real orders only: unpaid/abandoned checkouts are not orders.
+      Order.countDocuments(vendorVisibleOrderFilter()),
       Order.countDocuments({
+        ...vendorVisibleOrderFilter(),
+        createdAt: { $gte: startOfThisMonth },
+      }),
+      Order.countDocuments({
+        ...vendorVisibleOrderFilter(),
         createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth },
       }),
       Meal.countDocuments({ isDeleted: false }),
+      // Revenue = paid orders (a payment that arrived after its checkout
+      // expired is refunded, not revenue), in the month the money arrived.
       Order.aggregate<{ _id: null; totalRevenue: number }>([
-        { $match: { paymentStatus: "paid" } },
+        { $match: PAID_ORDER_REVENUE_MATCH },
+        { $group: { _id: null, totalRevenue: { $sum: "$totalAmount" } } },
+      ]),
+      Order.aggregate<{ _id: null; totalRevenue: number }>([
+        { $match: { ...PAID_ORDER_REVENUE_MATCH, ...paidInRange(startOfThisMonth) } },
         { $group: { _id: null, totalRevenue: { $sum: "$totalAmount" } } },
       ]),
       Order.aggregate<{ _id: null; totalRevenue: number }>([
         {
           $match: {
-            paymentStatus: "paid",
-            createdAt: { $gte: startOfThisMonth },
-          },
-        },
-        { $group: { _id: null, totalRevenue: { $sum: "$totalAmount" } } },
-      ]),
-      Order.aggregate<{ _id: null; totalRevenue: number }>([
-        {
-          $match: {
-            paymentStatus: "paid",
-            createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth },
+            ...PAID_ORDER_REVENUE_MATCH,
+            ...paidInRange(startOfLastMonth, startOfThisMonth),
           },
         },
         { $group: { _id: null, totalRevenue: { $sum: "$totalAmount" } } },
@@ -670,22 +695,28 @@ export class UserService {
       statusBreakdown,
       periodStatusBreakdown,
       paymentStatusBreakdown,
-      revenueByMonth,
+      financeByMonth,
       locationAggregation,
       trendingThisMonth,
       trendingLastMonth,
       rejectedOrders,
       totalOrdersForLocationDist,
-      paystackCostByMonth,
     ] = await Promise.all([
+      // Real orders only; unpaid checkouts have their own admin bucket.
       Order.aggregate<{ _id: string; count: number }>([
+        { $match: vendorVisibleOrderFilter() },
         { $group: { _id: "$status", count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
       Order.aggregate<{ _id: string; count: number }>([
-        ...(orderSummaryPeriodStart
-          ? [{ $match: { createdAt: { $gte: orderSummaryPeriodStart } } }]
-          : []),
+        {
+          $match: {
+            ...vendorVisibleOrderFilter(),
+            ...(orderSummaryPeriodStart
+              ? { createdAt: { $gte: orderSummaryPeriodStart } }
+              : {}),
+          },
+        },
         { $group: { _id: "$status", count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
@@ -693,34 +724,21 @@ export class UserService {
         { $group: { _id: "$paymentStatus", count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
-      Order.aggregate<{
-        _id: { year: number; month: number };
-        revenue: number;
-        commission: number;
-      }>([
+      // Same revenue and profit definition as the Financials page.
+      financeAggregationService.aggregateByMonth({ $gte: sixMonthsAgo }),
+      Order.aggregate<{ _id: string; count: number }>([
         {
           $match: {
-            paymentStatus: "paid",
-            createdAt: { $gte: sixMonthsAgo },
+            ...vendorVisibleOrderFilter(),
+            "addressSnapshot.city": { $exists: true, $ne: "" },
           },
         },
-        {
-          $group: {
-            _id: { year: { $year: "$createdAt" }, month: { $month: "$createdAt" } },
-            revenue: { $sum: "$totalAmount" },
-            commission: { $sum: "$serviceCharge" },
-          },
-        },
-        { $sort: { "_id.year": 1, "_id.month": 1 } },
-      ]),
-      Order.aggregate<{ _id: string; count: number }>([
-        { $match: { "addressSnapshot.city": { $exists: true, $ne: "" } } },
         { $group: { _id: "$addressSnapshot.city", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 10 },
       ]),
       Order.aggregate<{ _id: string; orders: number; price: number }>([
-        { $match: { createdAt: { $gte: startOfThisMonth } } },
+        { $match: { ...vendorVisibleOrderFilter(), createdAt: { $gte: startOfThisMonth } } },
         { $unwind: "$items" },
         {
           $group: {
@@ -735,6 +753,7 @@ export class UserService {
       Order.aggregate<{ _id: string; orders: number }>([
         {
           $match: {
+            ...vendorVisibleOrderFilter(),
             createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth },
           },
         },
@@ -746,51 +765,19 @@ export class UserService {
           },
         },
       ]),
-      Order.find({ status: "cancelled" })
+      Order.find({ status: "cancelled", ...vendorVisibleOrderFilter() })
         .sort({ createdAt: -1 })
         .limit(10)
         .select("_id createdAt status cancellationReason customerId")
         .populate("customerId", "firstName lastName"),
       Order.countDocuments({
+        ...vendorVisibleOrderFilter(),
         "addressSnapshot.city": { $exists: true, $ne: "" },
       }),
-      Payment.aggregate<{
-        _id: { year: number; month: number };
-        totalPaystackCosts: number;
-      }>([
-        {
-          $match: {
-            status: "succeeded",
-            context: "order",
-            createdAt: { $gte: sixMonthsAgo },
-          },
-        },
-        {
-          $group: {
-            _id: {
-              year: { $year: "$createdAt" },
-              month: { $month: "$createdAt" },
-            },
-            totalPaystackCosts: { $sum: { $ifNull: ["$paystackFeeAmount", 0] } },
-          },
-        },
-      ]),
     ]);
 
     const lastMonthByMeal = new Map(
       trendingLastMonth.map((entry) => [entry._id, entry.orders]),
-    );
-
-    // Real per-transaction Paystack cost, same derivation as
-    // FinancialsService.getAnalytics — summed from Payment.paystackFeeAmount
-    // rather than a flat percentage-of-revenue estimate, which both ignores
-    // the N100 flat component and never reflects the N2000 per-transaction
-    // cap.
-    const paystackCostByMonthKey = new Map(
-      paystackCostByMonth.map((entry) => [
-        `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`,
-        entry.totalPaystackCosts,
-      ]),
     );
 
     return {
@@ -810,23 +797,15 @@ export class UserService {
       // with revenue in only one month would otherwise produce a single
       // point, which Recharts can't connect into a line.
       revenueTrend: (() => {
-        const revenueByMonthKey = new Map(
-          revenueByMonth.map((entry) => [
-            `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`,
-            entry,
-          ]),
-        );
         const months: { month: string; revenue: number; profit: number }[] = [];
         for (let i = 5; i >= 0; i--) {
           const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
           const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-          const entry = revenueByMonthKey.get(monthKey);
+          const entry = financeByMonth.get(monthKey);
           months.push({
             month: monthKey,
             revenue: entry?.revenue ?? 0,
-            profit: entry
-              ? entry.commission - (paystackCostByMonthKey.get(monthKey) ?? 0)
-              : 0,
+            profit: entry?.netProfit ?? 0,
           });
         }
         return months;
@@ -886,7 +865,7 @@ export class UserService {
     statusBreakdown.forEach(({ _id: status, count }) => {
       if (status === "delivered") summary.completed += count;
       else if (status === "cancelled") summary.cancelled += count;
-      else summary.inProgress += count; // pending_payment, paid, confirmed, preparing, out_for_delivery
+      else summary.inProgress += count; // paid, confirmed, preparing, out_for_delivery (unpaid checkouts are excluded upstream)
     });
 
     return summary;

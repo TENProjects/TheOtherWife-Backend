@@ -109,7 +109,9 @@ export class MealPlanFulfillmentService {
             walletAmountApplied: 0,
             paystackAmountDue: 0,
             status: "paid",
-            paymentStatus: "succeeded",
+            // Order.paymentStatus only allows pending|paid|failed|refunded —
+            // "succeeded" (a Payment status) made every fulfilment fail validation.
+            paymentStatus: "paid",
             paidAt: new Date(),
           },
         ],
@@ -164,7 +166,9 @@ export class MealPlanFulfillmentService {
 
     if (!result) return;
 
-    await appSignalDispatcher.emit("order.created", {
+    // Already paid (the plan was paid upfront), so this is the moment the
+    // vendor hears about it.
+    await appSignalDispatcher.emit("order.paid", {
       orderId: result.order._id.toString(),
       customerUserId: result.scheduledMeal.customerId.toString(),
       vendorId: result.scheduledMeal.vendorId.toString(),

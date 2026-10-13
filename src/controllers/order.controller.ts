@@ -2,7 +2,13 @@
 
 import type { Request, Response } from "express";
 import { handleAsyncControl } from "../middlewares/handle-async-control.middleware.js";
-import { OrderService } from "../services/order.service.js";
+import {
+  ADMIN_ORDER_BUCKETS,
+  OrderService,
+  type AdminOrderBucket,
+} from "../services/order.service.js";
+import { BadRequestException } from "../errors/bad-request-exception.error.js";
+import { ErrorCode } from "../enums/error-code.enum.js";
 import { HttpStatus } from "../config/http.config.js";
 import { ApiResponse } from "../util/response.util.js";
 
@@ -170,14 +176,19 @@ export class OrderController {
   getAllOrdersForAdmin = handleAsyncControl(
     async (req: Request, res: Response): Promise<Response> => {
       const { status, bucket, search, page, limit } = req.query;
+      if (
+        bucket !== undefined &&
+        !(ADMIN_ORDER_BUCKETS as readonly string[]).includes(String(bucket))
+      ) {
+        throw new BadRequestException(
+          `bucket must be one of: ${ADMIN_ORDER_BUCKETS.join(", ")}`,
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
       const result = await this.orderService.getAllOrdersForAdmin({
         status: status as string | undefined,
-        bucket: bucket as
-          | "in_progress"
-          | "delayed"
-          | "completed"
-          | "cancelled"
-          | undefined,
+        bucket: bucket as AdminOrderBucket | undefined,
         search: search as string | undefined,
         page: page ? Number(page) : undefined,
         limit: limit ? Number(limit) : undefined,

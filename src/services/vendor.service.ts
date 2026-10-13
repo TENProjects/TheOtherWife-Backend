@@ -1,6 +1,12 @@
 /** @format */
 
 import { HttpStatus } from "../config/http.config.js";
+import { vendorVisibleOrderFilter } from "../util/order-visibility.util.js";
+import {
+  PUBLIC_VENDOR_ADDRESS_FIELDS,
+  toPublicVendorArea,
+  withPublicVendorArea,
+} from "../util/public-vendor.util.js";
 import mongoose, { ClientSession } from "mongoose";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
@@ -113,7 +119,8 @@ export class VendorService {
       .select(
         "businessName businessDescription businessLogoUrl approvalStatus isAvailable ratingAverage ratingCount ratingScore addressId openingHours",
       )
-      .populate("addressId", "city state country")
+      // Coordinates are read only to be coarsened (withPublicVendorArea below).
+      .populate("addressId", PUBLIC_VENDOR_ADDRESS_FIELDS)
       .sort({
         ratingScore: -1,
         ratingCount: -1,
@@ -151,7 +158,7 @@ export class VendorService {
       .map((vendor) => {
         const numberOfOrders = orderCountByVendorId.get(vendor._id.toString()) ?? 0;
         return {
-          ...vendor.toObject(),
+          ...withPublicVendorArea(vendor.toObject()),
           numberOfOrders,
         };
       })
@@ -233,10 +240,10 @@ export class VendorService {
       .select(
         "businessName businessDescription businessLogoUrl approvalStatus isAvailable openingHours addressId ratingAverage ratingCount ratingScore additionalData",
       )
-      .populate(
-        "addressId",
-        "address city state country postalCode latitude longitude",
-      );
+      // Area and approximate position only (see toPublicVendorArea); the
+      // exact street address is released only on a customer's paid pick-up
+      // order.
+      .populate("addressId", PUBLIC_VENDOR_ADDRESS_FIELDS);
 
     if (!vendor) {
       throw new NotFoundException(
@@ -273,7 +280,7 @@ export class VendorService {
         ratingAverage: vendor.ratingAverage,
         ratingCount: vendor.ratingCount,
         ratingScore: vendor.ratingScore,
-        address: vendor.addressId,
+        address: toPublicVendorArea(vendor.addressId as any),
       },
       availability: {
         isAvailable: vendor.isAvailable !== false,
@@ -764,7 +771,11 @@ export class VendorService {
       );
     }
 
-    const numberOfOrders = await Order.countDocuments({ vendorId: vendor._id });
+    // Real orders only — never unpaid/abandoned checkouts.
+    const numberOfOrders = await Order.countDocuments({
+      vendorId: vendor._id,
+      ...vendorVisibleOrderFilter(),
+    });
 
     const vendorObject = vendor.toObject();
     const { additionalData, ...vendorFields } = vendorObject as Record<

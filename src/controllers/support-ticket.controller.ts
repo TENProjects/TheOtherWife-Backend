@@ -1,6 +1,9 @@
 /** @format */
 
 import type { Request, Response } from "express";
+import { ErrorCode } from "../enums/error-code.enum.js";
+import { BadRequestException } from "../errors/bad-request-exception.error.js";
+import mongoose from "mongoose";
 import { handleAsyncControl } from "../middlewares/handle-async-control.middleware.js";
 import { SupportTicketService } from "../services/support-ticket.service.js";
 import { HttpStatus } from "../config/http.config.js";
@@ -180,14 +183,39 @@ export class SupportTicketController {
   // ── Admin ────────────────────────────────────────────────────────────
 
   getAdminTickets = handleAsyncControl(async (req: Request, res: Response) => {
-    const { page, limit, status, priority, category, search } = req.query;
+    const { page, limit, status, priority, category, search, orderId } = req.query;
+
+    // Filters are plain strings; a repeated or malformed parameter is a 400,
+    // never passed through to the query.
+    const asOptionalString = (value: unknown, field: string) => {
+      if (value === undefined || value === "") return undefined;
+      if (typeof value !== "string") {
+        throw new BadRequestException(
+          `${field} must be a single value`,
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
+      return value;
+    };
+
+    const orderIdFilter = asOptionalString(orderId, "orderId");
+    if (orderIdFilter !== undefined && !mongoose.isValidObjectId(orderIdFilter)) {
+      throw new BadRequestException(
+        "orderId must be a valid id",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
     const result = await this.supportTicketService.getAdminTickets({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
-      status: status as string | undefined,
-      priority: priority as string | undefined,
-      category: category as string | undefined,
-      search: search as string | undefined,
+      status: asOptionalString(status, "status"),
+      priority: asOptionalString(priority, "priority"),
+      category: asOptionalString(category, "category"),
+      search: asOptionalString(search, "search"),
+      orderId: orderIdFilter,
     });
 
     return res.status(HttpStatus.OK).json({

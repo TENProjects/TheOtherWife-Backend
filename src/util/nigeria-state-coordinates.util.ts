@@ -50,6 +50,16 @@ const STATE_CAPITAL_COORDINATES: Record<string, { latitude: number; longitude: n
 
 const DEFAULT_COORDINATES = STATE_CAPITAL_COORDINATES.lagos;
 
+// True when a point is exactly one of the fallback centroids above, i.e. the
+// address was saved without a real geocode.
+export const isStateCentroidCoordinate = (
+  latitude: number,
+  longitude: number,
+): boolean =>
+  Object.values(STATE_CAPITAL_COORDINATES).some(
+    (point) => point.latitude === latitude && point.longitude === longitude,
+  );
+
 export const getStateCentroidCoordinates = (
   state?: string,
 ): { latitude: number; longitude: number } => {

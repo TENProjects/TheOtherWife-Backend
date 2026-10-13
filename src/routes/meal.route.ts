@@ -308,7 +308,6 @@ import {
  *               - categoryName
  *               - preparationType
  *               - packagingOptions
- *               - proteinOptions
  *             properties:
  *               name: { type: string }
  *               description: { type: string }
@@ -351,7 +350,10 @@ import {
  *                   required, e.g. '[{"name":"Big Pack","price":500}]'
  *               proteinOptions:
  *                 type: string
- *                 description: JSON-encoded array of {name, price} objects, at least one required
+ *                 description: >-
+ *                   JSON-encoded array of {name, price} objects (optional — leave
+ *                   empty for snacks, pastries and drinks). When a meal lists
+ *                   proteins, customers must pick one when adding it to the cart.
  *               drinksOptions:
  *                 type: string
  *                 description: JSON-encoded array of {name, price} objects (optional)

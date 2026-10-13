@@ -12,15 +12,76 @@ import RefundRequest from "../models/refundRequest.model.js";
 import { transaction } from "../util/transaction.util.js";
 import { WalletService } from "./wallet.service.js";
 import { PaymentLedgerService } from "./payment-ledger.service.js";
+import { VendorWalletService } from "./vendor-wallet.service.js";
 
 export class RefundService {
   private walletService: WalletService;
   private paymentLedgerService: PaymentLedgerService;
+  private vendorWalletService: VendorWalletService;
 
   constructor() {
     this.walletService = new WalletService();
     this.paymentLedgerService = new PaymentLedgerService();
+    this.vendorWalletService = new VendorWalletService();
   }
+
+  // Shared by every "the order is cancelled but the customer had paid" path:
+  // vendor rejection, pre-preparation customer cancellation, and a payment
+  // that arrived after its checkout had already expired. The vendor's 80% cut
+  // is clawed back immediately — a fact about the cancelled order, not a
+  // judgment call (Financial & Commission Spec v1.0, section 4.1). The
+  // customer-facing refund always needs admin sign-off: this opens a pending
+  // RefundRequest (approved via decideRefundRequest, which credits the
+  // customer's wallet). Order.paymentStatus stays "paid" until then.
+  // Must run inside the caller's transaction (session).
+  openCancellationRefund = async (
+    session: ClientSession,
+    params: {
+      orderId: string;
+      customerId: string;
+      vendorId: string;
+      amount: number;
+      reason: string;
+    },
+  ) => {
+    const payment = await Payment.findOne({ orderId: params.orderId }).session(session);
+    if (!payment) {
+      return { refundRequestId: null as string | null };
+    }
+
+    await this.vendorWalletService.applyVendorClawback(
+      session,
+      payment._id.toString(),
+      params.reason,
+    );
+
+    const existingPending = await RefundRequest.findOne({
+      orderId: params.orderId,
+      status: "pending",
+    }).session(session);
+    if (existingPending) {
+      return { refundRequestId: existingPending._id.toString() };
+    }
+
+    if (params.amount <= 0) {
+      return { refundRequestId: null as string | null };
+    }
+
+    const [refundRequest] = await RefundRequest.create(
+      [
+        {
+          orderId: params.orderId,
+          customerId: params.customerId,
+          vendorId: params.vendorId,
+          amount: params.amount,
+          reason: params.reason,
+        },
+      ],
+      { session },
+    );
+
+    return { refundRequestId: refundRequest._id.toString() };
+  };
 
   createRefundRequest = async (
     requesterId: string,

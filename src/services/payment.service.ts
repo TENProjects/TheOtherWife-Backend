@@ -22,6 +22,7 @@ import { WalletService } from "./wallet.service.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
 import { VendorWalletService } from "./vendor-wallet.service.js";
 import { PaymentLedgerService } from "./payment-ledger.service.js";
+import { orderPaymentService } from "./order-payment.service.js";
 
 type InitializePaystackInput = {
   email: string;
@@ -193,220 +194,29 @@ export class PaymentService {
 
     // Meal-plan payments have no linked Order — they pay upfront for a
     // batch of ScheduledMeal instances instead, so this branch mirrors only
-    // the Payment + ScheduledMeal side of the logic below (no cart-clear,
-    // wallet, promo, or vendor-settlement steps, since none of those apply
-    // to a meal-plan batch).
+    // the Payment + ScheduledMeal side of the logic (no cart-clear, wallet,
+    // promo, or vendor-settlement steps, since none of those apply to a
+    // meal-plan batch).
     if (payment.context === "meal_plan") {
       return this.handleMealPlanPaystackEvent(payment, event);
     }
 
+    // Order payments go through the shared lifecycle (order-payment.service):
+    // atomic, idempotent transitions guarded on status "pending_payment", the
+    // vendor notified only once paid, and a payment that lands after its
+    // checkout was closed refunded instead of resurrected.
     if (event.event === "charge.failed") {
-      const result = await transaction.use(
-        async (
-          session: ClientSession,
-          paymentId: string,
-          providerPayload: Record<string, unknown>,
-        ) => {
-          const paymentRecord = await Payment.findById(paymentId).session(session);
-
-          if (!paymentRecord) {
-            throw new NotFoundException(
-              "Payment not found",
-              HttpStatus.NOT_FOUND,
-              ErrorCode.RESOURCE_NOT_FOUND,
-            );
-          }
-
-          if (paymentRecord.status === "succeeded") {
-            return { handled: true, payment: paymentRecord };
-          }
-
-          const previousStatus = paymentRecord.status;
-          paymentRecord.status = "failed";
-          paymentRecord.providerPayload = providerPayload;
-          await paymentRecord.save({ session });
-
-          const order = await Order.findById(paymentRecord.orderId).session(session);
-
-          if (!order) {
-            throw new NotFoundException(
-              "Order not found",
-              HttpStatus.NOT_FOUND,
-              ErrorCode.RESOURCE_NOT_FOUND,
-            );
-          }
-
-          order.paymentStatus = "failed";
-          order.status = "cancelled";
-          order.cancellationReason = "payment_timeout";
-          await order.save({ session });
-
-          await this.walletService.releaseReservedWalletForOrder(
-            session,
-            paymentRecord.customerId.toString(),
-            order._id.toString(),
-          );
-
-          const syncedPayment = await this.vendorWalletService.syncPaymentSettlementFromOrder(
-            session,
-            paymentRecord._id.toString(),
-          );
-
-          await this.paymentLedgerService.record(session, {
-            payment: syncedPayment,
-            entryType: "payment_failed",
-            amount: 0,
-            previousStatus,
-            actorType: "webhook",
-            metadata: { paystackEvent: "charge.failed" },
-          });
-
-          return { handled: true, payment: paymentRecord, order };
-        },
-      )(payment._id.toString(), event.data);
-
-      if (result.order) {
-        await appSignalDispatcher.emit("order.status_changed", {
-          orderId: result.order._id.toString(),
-          customerUserId: result.order.customerId.toString(),
-          vendorId: result.order.vendorId.toString(),
-          previousStatus: "pending_payment",
-          currentStatus: "cancelled",
-        });
-      }
-
-      return result;
+      return orderPaymentService.failOrderPayment(payment._id.toString(), event.data ?? {});
     }
 
-    if (payment.status === "succeeded") {
-      return { handled: true, payment };
-    }
+    const result = await orderPaymentService.confirmOrderPayment(
+      payment._id.toString(),
+      event.data ?? {},
+      "webhook",
+      event.event,
+    );
 
-    const paidAmount = Number(event.data?.amount ?? 0) / 100;
-
-    if (paidAmount !== payment.amount) {
-      throw new BadRequestException(
-        "Payment amount mismatch",
-        HttpStatus.BAD_REQUEST,
-        ErrorCode.VALIDATION_ERROR,
-      );
-    }
-
-    const result = await transaction.use(
-      async (session: ClientSession, paymentId: string, providerPayload: any) => {
-        const paymentRecord = await Payment.findById(paymentId).session(session);
-
-        if (!paymentRecord) {
-          throw new NotFoundException(
-            "Payment not found",
-            HttpStatus.NOT_FOUND,
-            ErrorCode.RESOURCE_NOT_FOUND,
-          );
-        }
-
-        if (paymentRecord.status === "succeeded") {
-          return { handled: true, payment: paymentRecord };
-        }
-
-        const previousStatus = paymentRecord.status;
-        paymentRecord.status = "succeeded";
-        paymentRecord.providerTransactionId = String(providerPayload.id ?? "");
-        paymentRecord.providerPayload = providerPayload;
-        paymentRecord.paidAt = providerPayload.paid_at
-          ? new Date(providerPayload.paid_at)
-          : new Date();
-        await paymentRecord.save({ session });
-
-        const order = await Order.findById(paymentRecord.orderId).session(session);
-
-        if (!order) {
-          throw new NotFoundException(
-            "Order not found",
-            HttpStatus.NOT_FOUND,
-            ErrorCode.RESOURCE_NOT_FOUND,
-          );
-        }
-
-        order.paymentStatus = "paid";
-        order.status = "paid";
-        order.paidAt = paymentRecord.paidAt;
-        await order.save({ session });
-
-        await this.walletService.finalizeReservedWalletForOrder(
-          session,
-          paymentRecord.customerId.toString(),
-          order._id.toString(),
-        );
-
-        try {
-          await this.promoService.creditEligiblePaidOrder(session, order);
-        } catch (error: any) {
-          console.error("Skipping promo credit after webhook confirmation", {
-            orderId: order._id?.toString?.(),
-            paymentId: paymentRecord._id?.toString?.(),
-            message: error?.message,
-          });
-        }
-
-        await Cart.findOneAndUpdate(
-          { customerId: paymentRecord.customerId },
-          {
-            $set: {
-              meals: [],
-              totalAmount: 0,
-            },
-          },
-          { session },
-        );
-
-        const syncedPayment = await this.vendorWalletService.syncPaymentSettlementFromOrder(
-          session,
-          paymentRecord._id.toString(),
-        );
-
-        await this.paymentLedgerService.record(session, {
-          payment: syncedPayment,
-          entryType: "payment_succeeded",
-          amount: paidAmount,
-          previousStatus,
-          actorType: "webhook",
-          metadata: { paystackEvent: event.event, reference: paymentRecord.reference },
-        });
-
-        // Section 3.2 — when this charge was split, Paystack already
-        // deposited the vendor's 80% cut directly to their bank account at
-        // charge time. Mark it settled immediately so it never shows up as
-        // "available to withdraw" (which would let the vendor request a
-        // manual payout for money they've already received).
-        if (paymentRecord.splitPayment) {
-          syncedPayment.vendorSettledAmount = syncedPayment.vendorNetAmount;
-          syncedPayment.settlementStatus = "paid";
-          await syncedPayment.save({ session });
-
-          await this.paymentLedgerService.record(session, {
-            payment: syncedPayment,
-            entryType: "vendor_split_settled",
-            amount: syncedPayment.vendorNetAmount,
-            actorType: "webhook",
-            metadata: { reason: "paystack_subaccount_split" },
-          });
-        }
-
-        return { handled: true, payment: paymentRecord, order };
-      },
-    )(payment._id.toString(), event.data);
-
-    if (result.order) {
-      await appSignalDispatcher.emit("order.status_changed", {
-        orderId: result.order._id.toString(),
-        customerUserId: result.order.customerId.toString(),
-        vendorId: result.order.vendorId.toString(),
-        previousStatus: "pending_payment",
-        currentStatus: "paid",
-      });
-    }
-
-    return result;
+    return { handled: true, outcome: result.outcome };
   };
 
   // Meal-plan counterpart of the charge.success/charge.failed handling
