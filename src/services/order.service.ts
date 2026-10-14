@@ -144,6 +144,12 @@ export class OrderService {
         payment?.vendorNetAmount ??
         vendorSplitOf((obj.subtotal ?? 0) - (obj.discountAmount ?? 0)).vendorNetAmount;
       obj.vendorEarnings = Math.max(net - (payment?.vendorClawbackAmount ?? 0), 0);
+      // Vendor app 1.0.2 maps `fulfillmentType` straight into a style lookup
+      // keyed "Delivery" | "Pick up", so the new lowercase value would crash
+      // its Orders screen. Vendors get it as `fulfillmentMode` instead; old
+      // builds keep seeing no field and show "Delivery", exactly as before.
+      obj.fulfillmentMode = obj.fulfillmentType === "pickup" ? "pickup" : "delivery";
+      delete obj.fulfillmentType;
       return obj;
     });
   };

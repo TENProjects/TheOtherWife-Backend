@@ -67,9 +67,12 @@ export class FinancialsService {
     return this.paymentLedgerService.emitCheckpoint();
   };
 
+  // Change relative to the size of last month's figure. Dividing by |previous|
+  // keeps the sign right when last month was a loss (net profit can be
+  // negative): going from −₦1,000 to +₦500 is +150%, not −150%.
   private percentChange = (current: number, previous: number): number => {
-    if (previous === 0) return current === 0 ? 0 : 100;
-    return Math.round(((current - previous) / previous) * 100);
+    if (previous === 0) return current === 0 ? 0 : current > 0 ? 100 : -100;
+    return Math.round(((current - previous) / Math.abs(previous)) * 100);
   };
 
   private getOrCreateSettings = async () => {
@@ -137,6 +140,13 @@ export class FinancialsService {
       },
       netProfit: allTime.netProfit,
       netProfitChange: this.percentChange(thisMonth.netProfit, lastMonth.netProfit),
+      // What net profit is made of: commission minus these costs.
+      netProfitBreakdown: {
+        commission: allTime.commission,
+        paystackFees: allTime.paystackFees,
+        refundsAbsorbed: allTime.refundsAbsorbed,
+        promoCosts: allTime.promoCosts,
+      },
     };
   };
 
