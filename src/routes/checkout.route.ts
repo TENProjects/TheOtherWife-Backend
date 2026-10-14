@@ -1,6 +1,7 @@
 /** @format */
 
-import { Router } from "express";
+import { Router, type Request } from "express";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { CheckoutController } from "../controllers/checkout.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
@@ -117,6 +118,82 @@ import {
  *         description: Not found
  */
 
+// Per-customer limits for the post-payment endpoints. verify-payment is
+// polled by the app for ~15s after Paystack closes, so it gets room for that;
+// every call that reaches Paystack is additionally throttled per order.
+const keyByUser = (req: Request): string =>
+  req.user?._id?.toString() ?? (req.ip ? ipKeyGenerator(req.ip) : "unknown");
+
+const verifyPaymentRateLimit = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: keyByUser,
+  validate: { xForwardedForHeader: false },
+  message: { status: "error", message: "Too many payment status checks. Please wait a moment." },
+});
+
+const cancelCheckoutRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: keyByUser,
+  validate: { xForwardedForHeader: false },
+  message: { status: "error", message: "Too many attempts. Please try again later." },
+});
+
+/**
+ * @swagger
+ * /api/v1/checkout/orders/{orderId}/verify-payment:
+ *   post:
+ *     summary: Server-verified payment status of the customer's checkout
+ *     description: >-
+ *       Called by the app after the Paystack page closes (whatever the
+ *       browser result). While the checkout is unpaid, the server verifies
+ *       the transaction with Paystack directly and records a success
+ *       immediately. Returns paymentState pending | paid | failed |
+ *       refund_pending, the Paystack authorizationUrl only while still
+ *       pending (to resume the same payment), and pickupLocation only once a
+ *       pick-up order is paid. Owner-only; rate-limited.
+ *     tags: [Checkout]
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       "200":
+ *         description: Payment state
+ *       "404":
+ *         description: Not found (or not the caller's order)
+ *       "429":
+ *         description: Too many requests
+ *
+ * /api/v1/checkout/orders/{orderId}/cancel:
+ *   post:
+ *     summary: Cancel an unpaid checkout
+ *     description: >-
+ *       Closes the customer's unpaid checkout and releases any reserved wallet
+ *       funds and promo redemption. Paystack is re-checked first: if the
+ *       payment actually went through, the order is confirmed instead and
+ *       paymentState "paid" is returned. 409 if the order is already paid.
+ *     tags: [Checkout]
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       "200":
+ *         description: Resulting payment state
+ *       "404":
+ *         description: Not found (or not the caller's order)
+ *       "409":
+ *         description: Already paid
+ */
+
 class CheckoutRouter {
   checkoutController: CheckoutController;
   router: Router;
@@ -139,6 +216,16 @@ class CheckoutRouter {
       "/confirm",
       zodValidation(checkoutConfirmSchema),
       this.checkoutController.confirmCheckout,
+    );
+    this.router.post(
+      "/orders/:orderId/verify-payment",
+      verifyPaymentRateLimit,
+      this.checkoutController.verifyCheckoutPayment,
+    );
+    this.router.post(
+      "/orders/:orderId/cancel",
+      cancelCheckoutRateLimit,
+      this.checkoutController.cancelCheckout,
     );
   }
 }

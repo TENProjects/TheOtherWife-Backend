@@ -23,18 +23,20 @@ import { PromoCodeService } from "./promo-code.service.js";
 import { isVendorReceivingOrders } from "../util/vendor-opening-hours.util.js";
 import { WalletService } from "./wallet.service.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
+import { orderPaymentService } from "./order-payment.service.js";
+import { vendorSplitOf } from "../util/finance-definitions.util.js";
 import {
   computeCustomizationDelta,
   MealCustomization,
 } from "../util/meal-customization.util.js";
 
 type CheckoutPaymentProvider = "paystack" | "cash" | "wallet";
+export type FulfillmentType = "delivery" | "pickup";
 
 // Financial & Commission Specification v1.0 (May 2026) — fixed, non-admin-
 // configurable rates. See section 8 "Quick Reference".
 const MINIMUM_ORDER_VALUE = 2000;
 const VAT_RATE_ON_PROCESSING_FEE = 0.075;
-const VENDOR_PAYOUT_RATE = 0.8;
 const PAYSTACK_FEE_RATE = 0.015;
 const PAYSTACK_FEE_FLAT = 100;
 const PAYSTACK_FEE_CAP = 2000;
@@ -92,6 +94,7 @@ type CheckoutPreviewResult = {
   items: CheckoutItem[];
   pricing: CheckoutPricing;
   promoCode?: { code: string; discountAmount: number };
+  fulfillmentType: FulfillmentType;
 };
 
 export class CheckoutService {
@@ -257,6 +260,9 @@ export class CheckoutService {
 
     let discountAmount = 0;
     let appliedPromoCode: { code: string; discountAmount: number } | undefined;
+    // Only set when the code was actually redeemed (usedCount incremented),
+    // so an unpaid checkout that later closes can hand the redemption back.
+    let promoCodeId: string | undefined;
 
     if (promoCode) {
       const result = redeemPromoCode
@@ -273,6 +279,7 @@ export class CheckoutService {
           );
 
       discountAmount = result.discountAmount;
+      promoCodeId = redeemPromoCode ? result.promoCodeId : undefined;
       appliedPromoCode = { code: promoCode.trim().toUpperCase(), discountAmount };
     }
 
@@ -307,6 +314,7 @@ export class CheckoutService {
         currency: "NGN",
       },
       promoCode: appliedPromoCode,
+      promoCodeId,
     };
   };
 
@@ -314,6 +322,7 @@ export class CheckoutService {
     customerId: string,
     addressId: string,
     promoCode?: string,
+    fulfillmentType: FulfillmentType = "delivery",
   ): Promise<CheckoutPreviewResult> => {
     const { cart, address, vendor, items, pricing, promoCode: appliedPromoCode } =
       await this.getCheckoutContext(customerId, addressId, promoCode);
@@ -342,6 +351,7 @@ export class CheckoutService {
       items,
       pricing,
       promoCode: appliedPromoCode,
+      fulfillmentType,
     };
   };
 
@@ -352,21 +362,26 @@ export class CheckoutService {
     useWallet = false,
     paymentProvider: CheckoutPaymentProvider = "paystack",
     promoCode?: string,
+    fulfillmentType: FulfillmentType = "delivery",
   ) => {
-    if (paymentProvider === "wallet") {
+    // Cash-on-delivery is not offered: a "cash" order skipped payment
+    // entirely and went straight to the vendor as confirmed-but-unpaid.
+    // Rejected here; the enum value stays in the models so historical
+    // records remain readable.
+    if (paymentProvider === "cash") {
       throw new BadRequestException(
-        "Wallet payment is not implemented yet",
+        "Cash payment is not supported. Please pay with Paystack or your TOW wallet.",
         HttpStatus.BAD_REQUEST,
         ErrorCode.VALIDATION_ERROR,
       );
     }
 
-    if (paymentProvider === "cash" && useWallet) {
-      throw new BadRequestException(
-        "Wallet split payment is only supported with Paystack for now",
-        HttpStatus.BAD_REQUEST,
-        ErrorCode.VALIDATION_ERROR,
-      );
+    // "wallet" means wallet first, with Paystack for any remainder — the
+    // existing wallet split path. (Older app builds send provider "wallet"
+    // for their Wallet option, which used to be rejected outright.)
+    if (paymentProvider === "wallet") {
+      useWallet = true;
+      paymentProvider = "paystack";
     }
 
     const user = await User.findById(customerId).select("email");
@@ -378,6 +393,12 @@ export class CheckoutService {
         ErrorCode.AUTH_USER_NOT_FOUND,
       );
     }
+
+    // At most one open checkout per customer: close earlier unpaid ones
+    // (re-checking Paystack first) so duplicates can't pile up and an
+    // abandoned wallet reservation can't block this one. Refuses with 409 if
+    // one of them turns out to have been paid after all.
+    await orderPaymentService.supersedePendingCheckouts(customerId);
 
     const {
       order,
@@ -445,6 +466,8 @@ export class CheckoutService {
               paystackAmountDue: checkoutContext.pricing.totalAmount,
               status: "pending_payment",
               paymentStatus: "pending",
+              fulfillmentType,
+              promoCodeId: checkoutContext.promoCodeId,
             },
           ],
           { session },
@@ -475,10 +498,8 @@ export class CheckoutService {
         // the Paystack fee, VAT, or the processing fee.
         const effectiveSubtotal =
           checkoutContext.pricing.subtotal - checkoutContext.pricing.discountAmount;
-        const vendorNetAmount = Math.max(
-          Math.round(effectiveSubtotal * VENDOR_PAYOUT_RATE),
-          0,
-        );
+        const { vendorGrossAmount, vendorNetAmount, vendorPlatformFeeAmount } =
+          vendorSplitOf(effectiveSubtotal);
         const paystackFeeAmount = calculatePaystackFee(
           checkoutContext.pricing.totalAmount,
         );
@@ -508,8 +529,8 @@ export class CheckoutService {
                   paystackAmountDue,
                 },
               },
-              vendorGrossAmount: effectiveSubtotal,
-              vendorPlatformFeeAmount: effectiveSubtotal - vendorNetAmount,
+              vendorGrossAmount,
+              vendorPlatformFeeAmount,
               vendorNetAmount,
               vendorSettledAmount: 0,
               paystackFeeAmount,
@@ -564,53 +585,8 @@ export class CheckoutService {
       },
     )(customerId, addressId, cartUpdatedAt, promoCode);
 
-    await appSignalDispatcher.emit("order.created", {
-      orderId: order._id.toString(),
-      customerUserId: customerId,
-      vendorId: order.vendorId.toString(),
-      totalAmount: order.totalAmount,
-      currency: order.currency,
-    });
-
-    if (paymentProvider === "cash") {
-      const [updatedOrder, updatedPayment] = await Promise.all([
-        Order.findByIdAndUpdate(
-          order._id,
-          {
-            $set: {
-              status: "confirmed",
-              paymentStatus: "pending",
-            },
-          },
-          { new: true },
-        ),
-        Payment.findByIdAndUpdate(
-          payment._id,
-          {
-            $set: {
-              status: "pending",
-            },
-          },
-          { new: true },
-        ),
-      ]);
-
-      if (updatedOrder) {
-        await appSignalDispatcher.emit("order.status_changed", {
-          orderId: updatedOrder._id.toString(),
-          customerUserId: updatedOrder.customerId.toString(),
-          vendorId: updatedOrder.vendorId.toString(),
-          previousStatus: "pending_payment",
-          currentStatus: "confirmed",
-        });
-      }
-
-      return {
-        order: updatedOrder,
-        payment: updatedPayment,
-        preview,
-      };
-    }
+    // No vendor notification here: this order is unpaid. The vendor is told
+    // only once payment is confirmed (signal "order.paid").
 
     if (payment.amount <= 0) {
       const paidAt = new Date();
@@ -621,7 +597,11 @@ export class CheckoutService {
           paymentId: string,
           currentCustomerId: string,
         ) => {
-          const orderRecord = await Order.findById(orderId).session(session);
+          const orderRecord = await Order.findOneAndUpdate(
+            { _id: orderId, status: "pending_payment" },
+            { $set: { status: "paid", paymentStatus: "paid", paidAt } },
+            { session, new: true },
+          );
           const paymentRecord = await Payment.findById(paymentId).session(session);
 
           if (!orderRecord || !paymentRecord) {
@@ -631,11 +611,6 @@ export class CheckoutService {
               ErrorCode.RESOURCE_NOT_FOUND,
             );
           }
-
-          orderRecord.status = "paid";
-          orderRecord.paymentStatus = "paid";
-          orderRecord.paidAt = paidAt;
-          await orderRecord.save({ session });
 
           const previousStatus = paymentRecord.status;
           paymentRecord.status = "succeeded";
@@ -682,6 +657,13 @@ export class CheckoutService {
         vendorId: updatedOrder.vendorId.toString(),
         previousStatus: "pending_payment",
         currentStatus: "paid",
+      });
+      await appSignalDispatcher.emit("order.paid", {
+        orderId: updatedOrder._id.toString(),
+        customerUserId: updatedOrder.customerId.toString(),
+        vendorId: updatedOrder.vendorId.toString(),
+        totalAmount: updatedOrder.totalAmount,
+        currency: updatedOrder.currency,
       });
 
       return {
@@ -746,9 +728,9 @@ export class CheckoutService {
           paymentId: string,
           currentCustomerId: string,
         ) => {
-          const [, failedPayment] = await Promise.all([
-            Order.findByIdAndUpdate(
-              orderId,
+          const [cancelledOrder, failedPayment] = await Promise.all([
+            Order.findOneAndUpdate(
+              { _id: orderId, status: "pending_payment" },
               {
                 $set: {
                   status: "cancelled",
@@ -756,7 +738,7 @@ export class CheckoutService {
                   paymentStatus: "failed",
                 },
               },
-              { session },
+              { session, new: true },
             ),
             Payment.findByIdAndUpdate(
               paymentId,
@@ -783,6 +765,10 @@ export class CheckoutService {
             currentCustomerId,
             orderId,
           );
+
+          if (cancelledOrder) {
+            await orderPaymentService.releasePromoRedemption(session, cancelledOrder);
+          }
         },
       )(order._id.toString(), payment._id.toString(), customerId);
       throw error;

@@ -11,7 +11,7 @@ import Vendor from "../models/vendor.model.js";
 import VendorPayoutAllocation from "../models/vendorPayoutAllocation.model.js";
 import VendorPayoutRequest from "../models/vendorPayoutRequest.model.js";
 import VendorClawback from "../models/vendorClawback.model.js";
-import FinancialSettings from "../models/financialSettings.model.js";
+import { vendorSplitOf } from "../util/finance-definitions.util.js";
 import { transaction } from "../util/transaction.util.js";
 import { PaystackSubaccountService } from "./paystack-subaccount.service.js";
 import { PaymentLedgerService } from "./payment-ledger.service.js";
@@ -21,6 +21,15 @@ type MarkPaidAllocationInput = {
   amount: number;
 };
 type AdminPayoutStatus = "requested" | "processing" | "approved" | "rejected";
+
+// Payments that count toward a vendor's earnings. A refund to the customer
+// flips the payment to "refunded" but does not, by itself, change what the
+// vendor is owed: a cancellation/rejection refund has already clawed the
+// vendor's share back (vendorClawbackAmount), and an admin dispute refund is
+// absorbed by TOW (the vendor keeps their 80%). Leaving refunded payments out
+// used to erase clawback debts on already-paid-out orders and silently drop
+// the vendor's share on disputes.
+const VENDOR_EARNING_PAYMENT_STATUSES = ["succeeded", "refunded"];
 
 export class VendorWalletService {
   private paystackSubaccountService: PaystackSubaccountService;
@@ -87,16 +96,8 @@ export class VendorWalletService {
     // Fixed 80/20 split of the (promo-discounted) meal subtotal only (Financial
     // & Commission Spec v1.0, section 3.2) — never a share of totalAmount,
     // which also includes the processing fee/VAT that are 100% TOW revenue.
-    const effectiveSubtotal = Math.max(
-      order.subtotal - (order.discountAmount ?? 0),
-      0,
-    );
-    const vendorNetAmount = Math.max(
-      Math.round(effectiveSubtotal * 0.8),
-      0,
-    );
-    const vendorGrossAmount = effectiveSubtotal;
-    const vendorPlatformFeeAmount = effectiveSubtotal - vendorNetAmount;
+    const { vendorGrossAmount, vendorNetAmount, vendorPlatformFeeAmount } =
+      vendorSplitOf(order.subtotal - (order.discountAmount ?? 0));
 
     payment.vendorId = order.vendorId;
     payment.vendorGrossAmount = vendorGrossAmount;
@@ -200,7 +201,7 @@ export class VendorWalletService {
       {
         $match: {
           vendorId: vendor._id,
-          status: "succeeded",
+          status: { $in: VENDOR_EARNING_PAYMENT_STATUSES },
         },
       },
       {
@@ -231,7 +232,12 @@ export class VendorWalletService {
     return {
       wallet: {
         currency: summary?.currency ?? "NGN",
-        lifetimeEarnings: summary?.totalNet ?? 0,
+        // The vendor's 80% of every paid order, less what was clawed back on
+        // cancelled/rejected ones — so lifetime − paid out = available.
+        lifetimeEarnings: Math.max(
+          (summary?.totalNet ?? 0) - (summary?.totalClawback ?? 0),
+          0,
+        ),
         totalPaidOut: summary?.totalSettled ?? 0,
         totalClawback: summary?.totalClawback ?? 0,
         availableToPayout: Math.max(summary?.pendingRaw ?? 0, 0),
@@ -250,7 +256,7 @@ export class VendorWalletService {
 
     const filter: Record<string, unknown> = {
       vendorId: vendor._id,
-      status: "succeeded",
+      status: { $in: VENDOR_EARNING_PAYMENT_STATUSES },
     };
 
     if (options.settlementStatus) {
@@ -291,18 +297,9 @@ export class VendorWalletService {
   ) => {
     this.assertPositiveAmount(input.amount, "Amount");
 
-    const settings = await FinancialSettings.findOne().select(
-      "minimumWithdrawalAmount",
-    );
-    const minimumWithdrawalAmount = settings?.minimumWithdrawalAmount ?? 0;
-
-    if (input.amount < minimumWithdrawalAmount) {
-      throw new BadRequestException(
-        `Requested amount is below the minimum withdrawal amount of ${minimumWithdrawalAmount}`,
-        HttpStatus.BAD_REQUEST,
-        ErrorCode.VALIDATION_ERROR,
-      );
-    }
+    // No minimum withdrawal for now (business decision): a vendor may request
+    // any amount up to their available balance, one open request at a time.
+    // FinancialSettings.minimumWithdrawalAmount is kept, but not enforced.
 
     const vendor = await this.getVendorByUserId(vendorUserId);
     const summary = await this.getVendorWalletSummary(vendorUserId);
@@ -692,15 +689,21 @@ export class VendorWalletService {
               );
             }
 
-            if (payment.status !== "succeeded") {
+            if (!VENDOR_EARNING_PAYMENT_STATUSES.includes(payment.status)) {
               throw new BadRequestException(
-                "Only succeeded payments can be allocated",
+                "Only paid orders can be allocated",
                 HttpStatus.BAD_REQUEST,
                 ErrorCode.VALIDATION_ERROR,
               );
             }
 
-            const remaining = Math.max(payment.vendorNetAmount - payment.vendorSettledAmount, 0);
+            // What is still owed on this payment: never a clawed-back share.
+            const remaining = Math.max(
+              payment.vendorNetAmount -
+                payment.vendorSettledAmount -
+                (payment.vendorClawbackAmount ?? 0),
+              0,
+            );
             if (allocation.amount > remaining) {
               throw new BadRequestException(
                 "Allocation exceeds payment unsettled amount",

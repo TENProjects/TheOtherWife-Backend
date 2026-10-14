@@ -1,6 +1,13 @@
 /** @format */
 
 import mongoose, { ClientSession } from "mongoose";
+import {
+  PUBLIC_VENDOR_ADDRESS_FIELDS,
+  PUBLIC_VENDOR_FIELDS,
+  toPublicVendorArea,
+  withPublicVendorArea,
+} from "../util/public-vendor.util.js";
+import { PAID_PAYMENT_STATUSES } from "../util/order-visibility.util.js";
 import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
@@ -514,7 +521,13 @@ export class MealService {
     }
 
     const meals = await Meal.find(query)
-      .populate("vendorId")
+      // Public endpoint: whitelisted vendor fields only, and the vendor's
+      // area (never street address/coordinates) — see PUBLIC_VENDOR_FIELDS.
+      .populate({
+        path: "vendorId",
+        select: PUBLIC_VENDOR_FIELDS,
+        populate: { path: "addressId", select: PUBLIC_VENDOR_ADDRESS_FIELDS },
+      })
       .skip(skip)
       .limit(pageSize)
       .sort({ createdAt: -1 });
@@ -522,8 +535,18 @@ export class MealService {
     const totalMeals = await Meal.countDocuments(query);
     const totalPages = Math.ceil(totalMeals / pageSize);
 
+    // The populated vendor address carries exact coordinates (read only to
+    // be coarsened); replace it with the public area before it leaves here.
+    const publicMeals = meals.map((meal) => {
+      const mealObject = meal.toJSON() as Record<string, any>;
+      return {
+        ...mealObject,
+        vendorId: withPublicVendorArea(mealObject.vendorId),
+      };
+    });
+
     return {
-      meals,
+      meals: publicMeals,
       pagination: {
         pageSize,
         pageNumber,
@@ -584,8 +607,10 @@ export class MealService {
     const meal = await Meal.findOne(query)
       .populate({
         path: "vendorId",
+        select: PUBLIC_VENDOR_FIELDS,
         populate: {
           path: "addressId",
+          select: PUBLIC_VENDOR_ADDRESS_FIELDS,
         },
       })
       .populate("categoryId");
@@ -640,18 +665,9 @@ export class MealService {
         businessName: vendorDocument?.businessName,
         businessDescription: vendorDocument?.businessDescription,
         businessLogoUrl: vendorDocument?.businessLogoUrl,
-        address: vendorDocument?.addressId
-          ? {
-              _id: vendorDocument.addressId._id,
-              address: vendorDocument.addressId.address,
-              city: vendorDocument.addressId.city,
-              state: vendorDocument.addressId.state,
-              country: vendorDocument.addressId.country,
-              postalCode: vendorDocument.addressId.postalCode,
-              latitude: vendorDocument.addressId.latitude,
-              longitude: vendorDocument.addressId.longitude,
-            }
-          : null,
+        // Area only before payment; the exact pick-up address is released
+        // on the customer's paid pick-up order.
+        address: toPublicVendorArea(vendorDocument?.addressId),
       },
       category: categoryDocument
         ? {
@@ -702,17 +718,28 @@ export class MealService {
         );
       }
 
+      if (!mongoose.isValidObjectId(body.orderId)) {
+        throw new BadRequestException(
+          "You can rate a meal once your order has been delivered",
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
+
+      // Reviews are for food the customer actually received: a delivered,
+      // paid order of theirs from this vendor that contains this meal.
       const order = await Order.findOne({
         _id: body.orderId,
         customerId,
         vendorId: meal.vendorId,
-        status: { $in: ["paid", "confirmed"] },
+        status: "delivered",
+        paymentStatus: { $in: [...PAID_PAYMENT_STATUSES] },
         "items.mealId": meal._id,
       }).session(session);
 
       if (!order) {
         throw new BadRequestException(
-          "A paid or confirmed order containing this meal is required to leave a review",
+          "You can rate a meal once your order has been delivered",
           HttpStatus.BAD_REQUEST,
           ErrorCode.VALIDATION_ERROR,
         );
@@ -732,19 +759,33 @@ export class MealService {
         );
       }
 
-      const [review] = await MealReview.create(
-        [
-          {
-            mealId,
-            vendorId: meal.vendorId,
-            orderId: body.orderId,
-            customerId,
-            rating: body.rating,
-            comment: body.comment,
-          },
-        ],
-        { session },
-      );
+      let review;
+      try {
+        [review] = await MealReview.create(
+          [
+            {
+              mealId,
+              vendorId: meal.vendorId,
+              orderId: body.orderId,
+              customerId,
+              rating: body.rating,
+              comment: body.comment,
+            },
+          ],
+          { session },
+        );
+      } catch (error: any) {
+        // The unique { orderId, customerId, mealId } index catches a
+        // double-submit that slipped past the check above.
+        if (error?.code === 11000) {
+          throw new BadRequestException(
+            "A review already exists for this meal in this order",
+            HttpStatus.BAD_REQUEST,
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        throw error;
+      }
 
       const [updatedMeal, updatedVendor] = await Promise.all([
         this.refreshMealRatingAggregate(

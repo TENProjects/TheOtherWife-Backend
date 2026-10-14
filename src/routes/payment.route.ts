@@ -14,6 +14,23 @@ import { PaymentController } from "../controllers/payment.controller.js";
  *         description: Webhook processed successfully
  *       "400":
  *         description: Invalid webhook payload or signature
+ *
+ * /api/v1/payments/paystack/return:
+ *   get:
+ *     summary: Paystack checkout return URL (redirects back into the app)
+ *     description: >-
+ *       Target of PAYSTACK_CALLBACK_URL. Validates the reference format and
+ *       302-redirects to the fixed app URL tow://payment-complete. Never
+ *       changes payment state — the app verifies via
+ *       POST /api/v1/checkout/orders/{orderId}/verify-payment.
+ *     tags: [Payment]
+ *     parameters:
+ *       - in: query
+ *         name: reference
+ *         schema: { type: string }
+ *     responses:
+ *       "302":
+ *         description: Redirect to the app
  */
 
 class PaymentRouter {
@@ -28,6 +45,7 @@ class PaymentRouter {
 
   initializeRoutes() {
     this.router.post("/webhook", this.paymentController.handlePaystackWebhook);
+    this.router.get("/paystack/return", this.paymentController.paystackReturn);
   }
 }
 

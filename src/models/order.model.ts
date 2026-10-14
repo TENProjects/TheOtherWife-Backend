@@ -40,6 +40,14 @@ export interface OrderDocument extends Document {
   paystackAmountDue: number;
   status: string;
   paymentStatus: string;
+  // How the customer receives the order. Defaults to "delivery" so orders
+  // created before pick-up existed (and older app versions that never send
+  // it) keep their original meaning.
+  fulfillmentType: "delivery" | "pickup";
+  // The promo code redeemed at checkout (its usedCount was incremented then).
+  // Recorded so an unpaid checkout that expires can hand the redemption
+  // back. Absent on orders created before this field existed.
+  promoCodeId?: mongoose.Types.ObjectId;
   // Only set when status === "cancelled" — see status enum comment below for
   // which trigger maps to which reason.
   cancellationReason?: string;
@@ -244,6 +252,16 @@ const OrderSchema = new Schema(
       enum: ["pending", "paid", "failed", "refunded"],
       default: "pending",
     },
+    fulfillmentType: {
+      type: String,
+      enum: ["delivery", "pickup"],
+      default: "delivery",
+    },
+    promoCodeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PromoCode",
+      required: false,
+    },
     cancellationReason: {
       type: String,
       enum: ["customer_requested", "vendor_unavailable", "payment_timeout"],
@@ -265,5 +283,10 @@ const OrderSchema = new Schema(
   },
   { timestamps: true },
 );
+
+// The unpaid-checkout expiry job scans { status: "pending_payment",
+// createdAt < cutoff } every few minutes — without this it would be a full
+// collection scan on every run.
+OrderSchema.index({ status: 1, createdAt: 1 });
 
 export default model<OrderDocument>("Order", OrderSchema);

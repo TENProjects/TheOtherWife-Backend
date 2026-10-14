@@ -3,6 +3,8 @@
 import SupportTicket, {
   SupportTicketDocument,
 } from "../models/supportTicket.model.js";
+import { customerVisibleOrderFilter, vendorVisibleOrderFilter } from "../util/order-visibility.util.js";
+import { toSafeSearchRegex } from "../util/regex.util.js";
 import Order from "../models/order.model.js";
 import User from "../models/user.model.js";
 import Vendor from "../models/vendor.model.js";
@@ -156,9 +158,12 @@ export class SupportTicketService {
 
     let vendorId: string | undefined;
     if (body.orderId) {
+      // Only orders the customer can actually see (paid, or paid then
+      // cancelled/refunded) — never an abandoned, unpaid checkout.
       const order = await Order.findOne({
         _id: body.orderId,
         customerId,
+        ...customerVisibleOrderFilter(),
       });
       if (!order) {
         throw new NotFoundException(
@@ -299,9 +304,11 @@ export class SupportTicketService {
     const vendor = await this.getVendorByUserId(vendorUserId);
 
     if (body.orderId) {
+      // Only orders the vendor can actually see.
       const order = await Order.findOne({
         _id: body.orderId,
         vendorId: vendor._id,
+        ...vendorVisibleOrderFilter(),
       });
       if (!order) {
         throw new NotFoundException(
@@ -434,6 +441,8 @@ export class SupportTicketService {
       priority?: string;
       category?: string;
       search?: string;
+      // Validated as an ObjectId by the controller.
+      orderId?: string;
     },
   ) => {
     const { safeLimit, safePage, skip } = paginate(filters);
@@ -442,11 +451,12 @@ export class SupportTicketService {
     if (filters.status) query.status = filters.status;
     if (filters.priority) query.priority = filters.priority;
     if (filters.category) query.category = filters.category;
-    if (filters.search) {
-      query.$or = [
-        { subject: { $regex: filters.search, $options: "i" } },
-        { ticketNumber: { $regex: filters.search, $options: "i" } },
-      ];
+    if (filters.orderId) query.orderId = filters.orderId;
+    if (filters.search?.trim()) {
+      // Literal, length-capped match: the admin's text is never run as a
+      // regular expression (regex injection / ReDoS).
+      const pattern = toSafeSearchRegex(filters.search);
+      query.$or = [{ subject: pattern }, { ticketNumber: pattern }];
     }
 
     const [tickets, total] = await Promise.all([

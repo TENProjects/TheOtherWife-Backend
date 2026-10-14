@@ -19,7 +19,7 @@ export class RefundController {
       req: Request<{ id: string }, {}, { amount?: number; reason: string }>,
       res: Response,
     ): Promise<Response> => {
-      const requesterId = req.user?._id as unknown as string;
+      const requesterId = String(req.user?._id);
       const requesterType = req.user?.userType as unknown as string;
 
       const result = await this.refundService.createRefundRequest(

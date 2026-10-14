@@ -120,6 +120,42 @@ depend on it. Check it is running with:
 sudo bash scripts/cron-call.sh .env.prod http://127.0.0.1:8000 /api/v1/internal/cron/partner-webhooks/run && echo ok
 ```
 
+**Unpaid checkout expiry (every 5 minutes).** An order is created when the
+customer starts paying, but vendors and the customer's order history only
+ever see it once it is paid. Checkouts the customer abandons are closed by
+`GET /api/v1/internal/cron/orders/expire-unpaid` once they are older than
+`ORDER_PAYMENT_TTL_MINUTES` (default 30). Each one is re-checked with
+Paystack first: a payment that did go through is confirmed (and the vendor
+notified) instead of being expired. If Paystack can't be reached, the order is
+left alone until `ORDER_PAYMENT_MAX_AGE_HOURS` (default 24). Expiring releases
+any reserved wallet funds and promo-code use, writes a ledger entry and sends
+no notifications. A payment that arrives after expiry keeps the order
+cancelled and opens a refund automatically.
+
+Roll it out dry-run first. After deploying, print what the job *would* do
+(nothing is changed):
+
+```bash
+cd /opt/the-other-wife-backend
+printf 'Authorization: Bearer %s\n' "$(grep -E '^CRON_SECRET=' .env.prod | tail -n 1 | cut -d= -f2- | tr -d '\r"')" \
+  | curl -fsS -H @- "http://127.0.0.1:8000/api/v1/internal/cron/orders/expire-unpaid?dryRun=1&limit=200" | jq .
+```
+
+(Without `jq` installed, drop the final `| jq .` — the JSON prints either way.)
+
+Check `data.items`: every entry should be an abandoned checkout, and any
+`"action": "confirm"` is a payment Paystack reports as successful (it will
+be confirmed, not expired). Then uncomment the expire-unpaid line in
+`deploy/cron/the-other-wife-backend` and copy the file to `/etc/cron.d/`
+again. To stop expiry at any time, comment the line out again — nothing else
+depends on it.
+
+Optional, once app 1.0.3 is the version most customers have: set
+`PAYSTACK_CALLBACK_URL=https://<api-domain>/api/v1/payments/paystack/return`
+so the Paystack page returns straight to the app after payment. The endpoint
+only validates the reference and redirects to `tow://payment-complete`; leave
+it unset until then.
+
 Partner webhooks and partner request signing also need `PARTNER_SECRETS_KEY`
 in `.env.prod`: 32 random bytes, base64, generated once and kept. Changing it
 later makes every stored webhook and signing secret unreadable, and they would

@@ -3,6 +3,7 @@
 import mongoose from "mongoose";
 
 import { Db } from "../config/db.config.js";
+import { vendorSplitOf } from "../util/finance-definitions.util.js";
 import Address from "../models/address.model.js";
 import Cart from "../models/cart.model.js";
 import Customer from "../models/customer.model.js";
@@ -654,9 +655,7 @@ export class Seeder {
           amount: orders[0].totalAmount,
           currency: "NGN",
           status: "succeeded",
-          vendorGrossAmount: orders[0].totalAmount,
-          vendorPlatformFeeAmount: orders[0].serviceCharge,
-          vendorNetAmount: Math.max(orders[0].totalAmount - orders[0].serviceCharge, 0),
+          ...vendorSplitOf(orders[0].subtotal - (orders[0].discountAmount ?? 0)),
           vendorSettledAmount: 0,
           settlementStatus: "unsettled",
           settlementEligibleAt: new Date(),
@@ -673,9 +672,7 @@ export class Seeder {
           amount: orders[1].totalAmount,
           currency: "NGN",
           status: "succeeded",
-          vendorGrossAmount: orders[1].totalAmount,
-          vendorPlatformFeeAmount: orders[1].serviceCharge,
-          vendorNetAmount: Math.max(orders[1].totalAmount - orders[1].serviceCharge, 0),
+          ...vendorSplitOf(orders[1].subtotal - (orders[1].discountAmount ?? 0)),
           vendorSettledAmount: 0,
           settlementStatus: "unsettled",
           settlementEligibleAt: new Date(),
@@ -692,9 +689,7 @@ export class Seeder {
           amount: orders[2].totalAmount,
           currency: "NGN",
           status: "pending_customer_action",
-          vendorGrossAmount: orders[2].totalAmount,
-          vendorPlatformFeeAmount: orders[2].serviceCharge,
-          vendorNetAmount: Math.max(orders[2].totalAmount - orders[2].serviceCharge, 0),
+          ...vendorSplitOf(orders[2].subtotal - (orders[2].discountAmount ?? 0)),
           vendorSettledAmount: 0,
           settlementStatus: "ineligible",
           authorizationUrl: "https://checkout.paystack.com/seed-pay-003",

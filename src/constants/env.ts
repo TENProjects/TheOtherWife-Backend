@@ -40,6 +40,8 @@ export const docsUsername: string | undefined = envconfig.DOCS_USERNAME;
 export const docsPassword: string | undefined = envconfig.DOCS_PASSWORD;
 export const ledgerCheckpointEmail: string | undefined =
   envconfig.LEDGER_CHECKPOINT_EMAIL;
+export const orderPaymentTtlMinutes: number = envconfig.ORDER_PAYMENT_TTL_MINUTES;
+export const orderPaymentMaxAgeHours: number = envconfig.ORDER_PAYMENT_MAX_AGE_HOURS;
 
 console.log("port", !!port);
 console.log("hostName", !!hostName);

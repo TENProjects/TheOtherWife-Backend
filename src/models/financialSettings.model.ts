@@ -125,12 +125,13 @@ const FinancialSettingsSchema = new Schema(
       min: 1,
       default: 60,
     },
-    // Enforced in VendorWalletService.requestVendorPayout.
+    // Not enforced for now: vendors may request any amount up to their
+    // available balance (VendorWalletService.requestVendorPayout).
     minimumWithdrawalAmount: {
       type: Number,
       required: true,
       min: 0,
-      default: 10000,
+      default: 0,
     },
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,

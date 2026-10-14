@@ -11,6 +11,17 @@ import VendorPayoutRequest from "../models/vendorPayoutRequest.model.js";
 import FinancialSettings from "../models/financialSettings.model.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { PaymentLedgerService } from "./payment-ledger.service.js";
+import { financeAggregationService } from "./finance-aggregation.service.js";
+import {
+  PLATFORM_FEE_PERCENT,
+  platformFeeEarned,
+  platformFeeEarnedExpr,
+  PROMO_COST_SHARE,
+  refundAbsorbed as computeRefundAbsorbed,
+  refundedVatShare,
+  roundNaira,
+} from "../util/finance-definitions.util.js";
+import { UNPAID_CANCELLATION_REASON } from "../util/order-visibility.util.js";
 
 export class FinancialsService {
   private paymentLedgerService = new PaymentLedgerService();
@@ -56,9 +67,12 @@ export class FinancialsService {
     return this.paymentLedgerService.emitCheckpoint();
   };
 
+  // Change relative to the size of last month's figure. Dividing by |previous|
+  // keeps the sign right when last month was a loss (net profit can be
+  // negative): going from −₦1,000 to +₦500 is +150%, not −150%.
   private percentChange = (current: number, previous: number): number => {
-    if (previous === 0) return current === 0 ? 0 : 100;
-    return Math.round(((current - previous) / previous) * 100);
+    if (previous === 0) return current === 0 ? 0 : current > 0 ? 100 : -100;
+    return Math.round(((current - previous) / Math.abs(previous)) * 100);
   };
 
   private getOrCreateSettings = async () => {
@@ -69,140 +83,70 @@ export class FinancialsService {
     return settings;
   };
 
-  // Real per-transaction Paystack cost for a date range (or all-time),
-  // summed from the same Payment.paystackFeeAmount field getNetProfitSummary
-  // uses — (amount * 1.5%) + N100, capped at N2000 per transaction (see
-  // calculatePaystackFee in checkout.service.ts) — instead of a flat
-  // percentage-of-revenue estimate, which both ignores the N100 flat
-  // component and never reflects the N2000 cap on larger orders.
-  private getRealPaystackCost = async (range?: {
-    $gte?: Date;
-    $lt?: Date;
-  }): Promise<number> => {
-    const [agg] = await Payment.aggregate<{ _id: null; totalPaystackCosts: number }>([
-      {
-        $match: {
-          status: "succeeded",
-          context: "order",
-          ...(range ? { createdAt: range } : {}),
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalPaystackCosts: { $sum: { $ifNull: ["$paystackFeeAmount", 0] } },
-        },
-      },
-    ]);
-    return agg?.totalPaystackCosts ?? 0;
-  };
-
+  // Commission is TOW's platform fee (20% of the meal subtotal) plus the
+  // service charge; net profit takes off Paystack fees, refunds absorbed and
+  // promo costs. VAT is payable, never revenue. One definition for every
+  // finance figure — see FinanceAggregationService.
   getSummary = async () => {
     const now = new Date();
     const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-    const [
-      totalsAgg,
-      thisMonthAgg,
-      lastMonthAgg,
-      pendingWithdrawalsAgg,
-      settings,
-      totalPaystackCost,
-      thisMonthPaystackCost,
-      lastMonthPaystackCost,
-    ] = await Promise.all([
-      Order.aggregate<{ _id: null; revenue: number; commission: number }>([
-        { $match: { paymentStatus: "paid" } },
-        {
-          $group: {
-            _id: null,
-            revenue: { $sum: "$totalAmount" },
-            commission: { $sum: "$serviceCharge" },
+    const [allTime, thisMonth, lastMonth, pendingWithdrawalsAgg] =
+      await Promise.all([
+        financeAggregationService.aggregate(),
+        financeAggregationService.aggregate({ $gte: startOfThisMonth }),
+        financeAggregationService.aggregate({
+          $gte: startOfLastMonth,
+          $lt: startOfThisMonth,
+        }),
+        VendorPayoutRequest.aggregate<{
+          _id: null;
+          count: number;
+          amount: number;
+        }>([
+          { $match: { status: { $in: ["requested", "processing"] } } },
+          {
+            $group: {
+              _id: null,
+              count: { $sum: 1 },
+              amount: { $sum: "$requestedAmount" },
+            },
           },
-        },
-      ]),
-      Order.aggregate<{ _id: null; revenue: number; commission: number }>([
-        {
-          $match: {
-            paymentStatus: "paid",
-            createdAt: { $gte: startOfThisMonth },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            revenue: { $sum: "$totalAmount" },
-            commission: { $sum: "$serviceCharge" },
-          },
-        },
-      ]),
-      Order.aggregate<{ _id: null; revenue: number; commission: number }>([
-        {
-          $match: {
-            paymentStatus: "paid",
-            createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            revenue: { $sum: "$totalAmount" },
-            commission: { $sum: "$serviceCharge" },
-          },
-        },
-      ]),
-      VendorPayoutRequest.aggregate<{
-        _id: null;
-        count: number;
-        amount: number;
-      }>([
-        { $match: { status: { $in: ["requested", "processing"] } } },
-        {
-          $group: {
-            _id: null,
-            count: { $sum: 1 },
-            amount: { $sum: "$requestedAmount" },
-          },
-        },
-      ]),
-      this.getOrCreateSettings(),
-      this.getRealPaystackCost(),
-      this.getRealPaystackCost({ $gte: startOfThisMonth }),
-      this.getRealPaystackCost({ $gte: startOfLastMonth, $lt: startOfThisMonth }),
-    ]);
+        ]),
+      ]);
 
-    const totals = totalsAgg[0] ?? { revenue: 0, commission: 0 };
-    const thisMonth = thisMonthAgg[0] ?? { revenue: 0, commission: 0 };
-    const lastMonth = lastMonthAgg[0] ?? { revenue: 0, commission: 0 };
     const pendingWithdrawals = pendingWithdrawalsAgg[0] ?? {
       count: 0,
       amount: 0,
     };
 
-    // Net profit = commission revenue minus the real, per-transaction cost
-    // of processing that revenue through Paystack.
-    const netProfit = totals.commission - totalPaystackCost;
-    const netProfitThisMonth = thisMonth.commission - thisMonthPaystackCost;
-    const netProfitLastMonth = lastMonth.commission - lastMonthPaystackCost;
-
     return {
-      totalRevenue: totals.revenue,
-      totalRevenueChange: this.percentChange(
-        thisMonth.revenue,
-        lastMonth.revenue,
-      ),
-      totalCommission: totals.commission,
-      commissionRatePercent: settings.commissionRate,
+      totalRevenue: allTime.revenue,
+      totalRevenueChange: this.percentChange(thisMonth.revenue, lastMonth.revenue),
+      totalCommission: allTime.commission,
+      // The platform fee actually charged at checkout (the editable
+      // commission setting does not change it).
+      commissionRatePercent: PLATFORM_FEE_PERCENT,
+      commissionBreakdown: {
+        platformFees: allTime.platformFees,
+        serviceCharges: allTime.serviceCharges,
+      },
+      // Owed to the government — reported, never counted as profit.
+      vatCollected: allTime.vatCollected,
       pendingWithdrawals: {
         count: pendingWithdrawals.count,
         amount: pendingWithdrawals.amount,
       },
-      netProfit,
-      netProfitChange: this.percentChange(
-        netProfitThisMonth,
-        netProfitLastMonth,
-      ),
+      netProfit: allTime.netProfit,
+      netProfitChange: this.percentChange(thisMonth.netProfit, lastMonth.netProfit),
+      // What net profit is made of: commission minus these costs.
+      netProfitBreakdown: {
+        commission: allTime.commission,
+        paystackFees: allTime.paystackFees,
+        refundsAbsorbed: allTime.refundsAbsorbed,
+        promoCosts: allTime.promoCosts,
+      },
     };
   };
 
@@ -210,112 +154,97 @@ export class FinancialsService {
     const now = new Date();
     const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
-    const [revenueByMonth, commissionByCategoryAgg, paystackCostByMonth] =
-      await Promise.all([
-        Order.aggregate<{
-          _id: { year: number; month: number };
-          revenue: number;
-          commission: number;
-        }>([
-          {
-            $match: {
-              paymentStatus: "paid",
-              createdAt: { $gte: twelveMonthsAgo },
-            },
+    const [byMonth, commissionByCategoryAgg] = await Promise.all([
+      financeAggregationService.aggregateByMonth({ $gte: twelveMonthsAgo }),
+      // Apportions each order's commission (platform fee + service charge)
+      // across its line items by revenue share, then groups by the item's
+      // meal category — both are captured per order, not per item, so this
+      // is a proportional allocation rather than a directly stored figure.
+      Payment.aggregate<{ _id: string; commission: number }>([
+        { $match: { context: "order", status: { $in: ["succeeded", "refunded"] } } },
+        {
+          $lookup: {
+            from: "orders",
+            localField: "orderId",
+            foreignField: "_id",
+            as: "order",
           },
-          {
-            $group: {
-              _id: {
-                year: { $year: "$createdAt" },
-                month: { $month: "$createdAt" },
+        },
+        { $unwind: "$order" },
+        // A payment that arrived after its checkout expired earned nothing.
+        {
+          $match: {
+            $nor: [
+              {
+                "order.status": "cancelled",
+                "order.cancellationReason": UNPAID_CANCELLATION_REASON,
               },
-              revenue: { $sum: "$totalAmount" },
-              commission: { $sum: "$serviceCharge" },
+            ],
+          },
+        },
+        {
+          $project: {
+            subtotal: "$order.subtotal",
+            items: "$order.items",
+            commission: {
+              $add: [platformFeeEarnedExpr(), { $ifNull: ["$order.serviceCharge", 0] }],
             },
           },
-          { $sort: { "_id.year": 1, "_id.month": 1 } },
-        ]),
-        // Apportions each order's commission (serviceCharge) across its line
-        // items by revenue share, then groups by the item's meal category —
-        // serviceCharge is captured at the order level, not per item, so this
-        // is a proportional allocation rather than a directly stored figure.
-        Order.aggregate<{ _id: string; commission: number }>([
-          { $match: { paymentStatus: "paid" } },
-          { $unwind: "$items" },
-          {
-            $lookup: {
-              from: "meals",
-              localField: "items.mealId",
-              foreignField: "_id",
-              as: "mealInfo",
+        },
+        { $unwind: "$items" },
+        {
+          $lookup: {
+            from: "meals",
+            localField: "items.mealId",
+            foreignField: "_id",
+            as: "mealInfo",
+          },
+        },
+        { $unwind: { path: "$mealInfo", preserveNullAndEmptyArrays: true } },
+        {
+          $project: {
+            categoryName: { $ifNull: ["$mealInfo.categoryName", "Uncategorized"] },
+            commissionShare: {
+              $cond: [
+                { $gt: ["$subtotal", 0] },
+                {
+                  $multiply: [
+                    "$commission",
+                    { $divide: ["$items.lineTotal", "$subtotal"] },
+                  ],
+                },
+                0,
+              ],
             },
           },
-          { $unwind: { path: "$mealInfo", preserveNullAndEmptyArrays: true } },
-          {
-            $project: {
-              categoryName: { $ifNull: ["$mealInfo.categoryName", "Uncategorized"] },
-              commissionShare: {
-                $cond: [
-                  { $gt: ["$subtotal", 0] },
-                  {
-                    $multiply: [
-                      "$serviceCharge",
-                      { $divide: ["$items.lineTotal", "$subtotal"] },
-                    ],
-                  },
-                  0,
-                ],
-              },
-            },
+        },
+        {
+          $group: {
+            _id: "$categoryName",
+            commission: { $sum: "$commissionShare" },
           },
-          {
-            $group: {
-              _id: "$categoryName",
-              commission: { $sum: "$commissionShare" },
-            },
-          },
-          { $sort: { commission: -1 } },
-          { $limit: 10 },
-        ]),
-        Payment.aggregate<{
-          _id: { year: number; month: number };
-          totalPaystackCosts: number;
-        }>([
-          {
-            $match: {
-              status: "succeeded",
-              context: "order",
-              createdAt: { $gte: twelveMonthsAgo },
-            },
-          },
-          {
-            $group: {
-              _id: {
-                year: { $year: "$createdAt" },
-                month: { $month: "$createdAt" },
-              },
-              totalPaystackCosts: { $sum: { $ifNull: ["$paystackFeeAmount", 0] } },
-            },
-          },
-        ]),
-      ]);
-
-    const paystackCostByMonthKey = new Map(
-      paystackCostByMonth.map((entry) => [
-        `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`,
-        entry.totalPaystackCosts,
+        },
+        { $sort: { commission: -1 } },
+        { $limit: 10 },
       ]),
-    );
+    ]);
+
+    // Every one of the 12 months, so the trend is a continuous line even
+    // when a month had no activity.
+    const revenueProfitTrend: { month: string; revenue: number; profit: number }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const month = byMonth.get(monthKey);
+      revenueProfitTrend.push({
+        month: monthKey,
+        revenue: month?.revenue ?? 0,
+        profit: month?.netProfit ?? 0,
+      });
+    }
 
     return {
-      revenueProfitTrend: revenueByMonth.map((entry) => {
-        const monthKey = `${entry._id.year}-${String(entry._id.month).padStart(2, "0")}`;
-        return {
-          month: monthKey,
-          revenue: entry.revenue,
-          profit: entry.commission - (paystackCostByMonthKey.get(monthKey) ?? 0),
-        };
-      }),
+      revenueProfitTrend,
       commissionByCategory: commissionByCategoryAgg.map((entry) => ({
         category: entry._id,
         commission: Math.round(entry.commission),
@@ -560,10 +489,18 @@ export class FinancialsService {
   };
 
   // Financial & Commission Spec v1.0, section 7.1 — full per-order profit
-  // breakdown. Deliberately independent of getSummary/getAnalytics above
-  // (which predate this spec and are left untouched) so nothing already
-  // consuming those is affected.
+  // breakdown, on the same definition as every other finance figure: VAT is
+  // payable (not profit) and a refund's cost is net of its VAT share and of
+  // what was clawed back from the vendor.
   getOrderProfitBreakdown = async (orderId: string) => {
+    if (!mongoose.isValidObjectId(orderId)) {
+      throw new NotFoundException(
+        "Order not found",
+        HttpStatus.NOT_FOUND,
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    }
+
     const order = await Order.findById(orderId);
     if (!order) {
       throw new NotFoundException(
@@ -573,46 +510,78 @@ export class FinancialsService {
       );
     }
 
-    const payment = await Payment.findOne({ orderId: order._id });
+    const [payment, approvedRefunds] = await Promise.all([
+      Payment.findOne({ orderId: order._id, context: "order" }),
+      // Every customer-facing refund (vendor rejection, pre-preparation
+      // cancellation, admin-mediated dispute) is an approved RefundRequest.
+      RefundRequest.find({ orderId: order._id, status: "approved" }).select("amount"),
+    ]);
 
-    // "Refund Absorbed" — every customer-facing refund (vendor rejection,
-    // pre-preparation customer cancellation, or an admin-mediated dispute)
-    // now flows through an approved RefundRequest (section 7.1), so this one
-    // lookup captures TOW's refund cost regardless of what triggered it.
-    const approvedRefund = await RefundRequest.findOne({
-      orderId: order._id,
-      status: "approved",
+    const paid = payment?.status === "succeeded" || payment?.status === "refunded";
+    // A payment that arrived after the checkout expired never became an
+    // order: no commission, and its refund simply returns the money.
+    const lateAfterExpiry =
+      order.status === "cancelled" &&
+      order.cancellationReason === UNPAID_CANCELLATION_REASON;
+    const counts = paid && !lateAfterExpiry;
+
+    const refundIssued = counts
+      ? approvedRefunds.reduce((sum, refund) => sum + (refund.amount ?? 0), 0)
+      : 0;
+    const orderTaxAmount = order.taxAmount ?? 0;
+    const orderTotalAmount = order.totalAmount ?? 0;
+    const vatRefunded = refundedVatShare({
+      refundAmount: refundIssued,
+      orderTaxAmount,
+      orderTotalAmount,
     });
-    const refundAbsorbed = approvedRefund?.amount ?? 0;
+    const clawbackRecovered = Math.min(
+      payment?.vendorClawbackAmount ?? 0,
+      Math.max(refundIssued - vatRefunded, 0),
+    );
+    const refundAbsorbed = computeRefundAbsorbed({
+      refundAmount: refundIssued,
+      orderTaxAmount,
+      orderTotalAmount,
+      clawbackRecovered,
+    });
 
-    const promoDiscountCost = Math.round((order.discountAmount ?? 0) * 0.2);
-    const towCommission = payment?.vendorPlatformFeeAmount ?? 0;
-    const paystackFeeAmount = payment?.paystackFeeAmount ?? 0;
+    const towCommission = counts && payment ? platformFeeEarned(payment, order) : 0;
+    const processingFee = counts ? order.serviceCharge : 0;
+    const promoDiscountCost = counts
+      ? Math.round((order.discountAmount ?? 0) * PROMO_COST_SHARE)
+      : 0;
+    const paystackFeeAmount = paid ? payment?.paystackFeeAmount ?? 0 : 0;
 
-    const netProfit =
-      towCommission +
-      order.serviceCharge +
-      (order.taxAmount ?? 0) -
-      paystackFeeAmount -
-      refundAbsorbed -
-      promoDiscountCost;
+    const netProfit = roundNaira(
+      towCommission + processingFee - paystackFeeAmount - refundAbsorbed - promoDiscountCost,
+    );
 
     return {
       orderId: order._id.toString(),
       mealSubtotal: order.subtotal,
       processingFee: order.serviceCharge,
-      vat: order.taxAmount ?? 0,
+      vat: orderTaxAmount,
       customerTotal: order.totalAmount,
       paystackFee: paystackFeeAmount,
       homeChefPayout: payment?.vendorNetAmount ?? 0,
       towCommission,
+      // TOW's gross earnings on the order: platform fee + service charge.
+      totalCommission: roundNaira(towCommission + processingFee),
+      refundIssued,
+      clawbackRecovered,
       refundAbsorbed,
       promoDiscountCost,
+      // Owed to the government, net of any refunded share — not profit.
+      vatPayable: counts ? roundNaira(Math.max(orderTaxAmount - vatRefunded, 0)) : 0,
+      lateAfterExpiry,
       towNetProfit: netProfit,
     };
   };
 
-  // Section 7.2 — aggregated dashboard summary cards for a time range.
+  // Section 7.2 — aggregated dashboard summary cards for a time range
+  // (inclusive), on the shared definition. Existing fields are kept;
+  // grossRevenue no longer includes VAT (now reported as payable).
   getNetProfitSummary = async (range?: { from?: Date; to?: Date }) => {
     if (range?.from && range?.to && range.from.getTime() > range.to.getTime()) {
       throw new BadRequestException(
@@ -622,86 +591,26 @@ export class FinancialsService {
       );
     }
 
-    const createdAtMatch: Record<string, Date> = {};
-    if (range?.from) createdAtMatch.$gte = range.from;
-    if (range?.to) createdAtMatch.$lte = range.to;
+    const dateRange: { $gte?: Date; $lte?: Date } = {};
+    if (range?.from) dateRange.$gte = range.from;
+    if (range?.to) dateRange.$lte = range.to;
 
-    const orderMatch: Record<string, unknown> = { paymentStatus: "paid" };
-    if (Object.keys(createdAtMatch).length > 0) {
-      orderMatch.createdAt = createdAtMatch;
-    }
-
-    const [orderAgg] = await Order.aggregate<{
-      _id: null;
-      totalGMV: number;
-      totalProcessingFees: number;
-      totalVatCollected: number;
-      totalPromoCosts: number;
-    }>([
-      { $match: orderMatch },
-      {
-        $group: {
-          _id: null,
-          totalGMV: { $sum: "$subtotal" },
-          totalProcessingFees: { $sum: "$serviceCharge" },
-          totalVatCollected: { $sum: { $ifNull: ["$taxAmount", 0] } },
-          totalPromoCosts: {
-            $sum: { $multiply: [{ $ifNull: ["$discountAmount", 0] }, 0.2] },
-          },
-        },
-      },
-    ]);
-
-    const [paymentAgg] = await Payment.aggregate<{
-      _id: null;
-      totalPaystackCosts: number;
-      totalCommissions: number;
-    }>([
-      { $match: { status: "succeeded", context: "order", ...(Object.keys(createdAtMatch).length > 0 ? { createdAt: createdAtMatch } : {}) } },
-      {
-        $group: {
-          _id: null,
-          totalPaystackCosts: { $sum: { $ifNull: ["$paystackFeeAmount", 0] } },
-          totalCommissions: { $sum: { $ifNull: ["$vendorPlatformFeeAmount", 0] } },
-        },
-      },
-    ]);
-
-    const refundMatch: Record<string, unknown> = { status: "approved" };
-    if (Object.keys(createdAtMatch).length > 0) {
-      refundMatch.decidedAt = createdAtMatch;
-    }
-    const [refundAgg] = await RefundRequest.aggregate<{
-      _id: null;
-      totalRefundsIssued: number;
-    }>([
-      { $match: refundMatch },
-      { $group: { _id: null, totalRefundsIssued: { $sum: "$amount" } } },
-    ]);
-
-    const totalGMV = orderAgg?.totalGMV ?? 0;
-    const totalProcessingFees = orderAgg?.totalProcessingFees ?? 0;
-    const totalVatCollected = orderAgg?.totalVatCollected ?? 0;
-    const totalPromoCosts = Math.round(orderAgg?.totalPromoCosts ?? 0);
-    const totalPaystackCosts = paymentAgg?.totalPaystackCosts ?? 0;
-    const totalCommissions = paymentAgg?.totalCommissions ?? 0;
-    const totalRefundsIssued = refundAgg?.totalRefundsIssued ?? 0;
-
-    const grossRevenue = totalCommissions + totalProcessingFees + totalVatCollected;
-    const totalCosts = totalPaystackCosts + totalRefundsIssued + totalPromoCosts;
-    const netProfit = grossRevenue - totalCosts;
+    const totals = await financeAggregationService.aggregate(dateRange);
 
     return {
-      totalGMV,
-      totalProcessingFees,
-      totalVatCollected,
-      totalPaystackCosts,
-      totalCommissions,
-      totalRefundsIssued,
-      totalPromoCosts,
-      grossRevenue,
-      totalCosts,
-      netProfit,
+      totalGMV: totals.mealSubtotal,
+      totalProcessingFees: totals.serviceCharges,
+      totalVatCollected: totals.vatCollected,
+      totalPaystackCosts: totals.paystackFees,
+      totalCommissions: totals.platformFees,
+      totalRefundsIssued: totals.refundsIssued,
+      totalRefundsAbsorbed: totals.refundsAbsorbed,
+      totalClawbackRecovered: totals.clawbackRecovered,
+      totalPromoCosts: totals.promoCosts,
+      grossRevenue: totals.commission,
+      totalCosts: totals.totalCosts,
+      netProfit: totals.netProfit,
     };
   };
+
 }

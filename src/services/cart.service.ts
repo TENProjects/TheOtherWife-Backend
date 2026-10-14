@@ -64,6 +64,8 @@ class CartBase {
       );
     }
 
+    // Proteins are optional per meal (snacks, pastries and drinks have none);
+    // only a meal that lists protein options requires the customer to pick.
     if (
       meal.proteinOptions.length > 0 &&
       !(customization?.proteinSelections?.length ||

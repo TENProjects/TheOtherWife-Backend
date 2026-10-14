@@ -111,11 +111,11 @@ export const createMealSchema = z.object({
     .refine((options) => options.length > 0, {
       message: "At least one packaging option is required",
     }),
+  // Optional: snacks, pastries and drinks have no protein. When a meal does
+  // list protein options, the customer must pick one (cart.service.ts).
   proteinOptions: z
     .preprocess(parseJsonArrayField, mealOptionArraySchema)
-    .refine((options) => options.length > 0, {
-      message: "At least one protein option is required",
-    }),
+    .default([]),
   drinksOptions: z
     .preprocess(parseJsonArrayField, mealOptionArraySchema)
     .default([]),

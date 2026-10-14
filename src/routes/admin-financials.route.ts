@@ -460,7 +460,10 @@ import { requireAdminRole } from "../middlewares/require-admin-role.middleware.j
  *             properties:
  *               refundAutoApprovalThreshold: { type: number, minimum: 0 }
  *               orderDelayThresholdMinutes: { type: number, minimum: 1 }
- *               minimumWithdrawalAmount: { type: number, minimum: 0 }
+ *               minimumWithdrawalAmount:
+ *                 type: number
+ *                 minimum: 0
+ *                 description: Stored only — not enforced for now (vendors may request any amount up to their balance).
  *     responses:
  *       "200":
  *         description: System settings updated successfully

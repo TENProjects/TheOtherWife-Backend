@@ -13,6 +13,7 @@
 
 import mongoose from "mongoose";
 import { Db } from "../config/db.config.js";
+import { vendorSplitOf } from "../util/finance-definitions.util.js";
 import User from "../models/user.model.js";
 import Vendor from "../models/vendor.model.js";
 import Address from "../models/address.model.js";
@@ -176,9 +177,8 @@ async function main() {
     );
 
     if (scenario.paymentStatus === "paid" || scenario.paymentStatus === "refunded") {
-      const vendorNetAmount = Math.max(Math.round(effectiveSubtotal * 0.8), 0);
-      const vendorGrossAmount = effectiveSubtotal;
-      const vendorPlatformFeeAmount = effectiveSubtotal - vendorNetAmount;
+      const { vendorNetAmount, vendorGrossAmount, vendorPlatformFeeAmount } =
+        vendorSplitOf(effectiveSubtotal);
       // Payment.status keeps its own (unaffected) vocabulary — "succeeded"
       // rather than Order.paymentStatus's "paid" — see payment.model.ts.
       const paymentModelStatus = scenario.paymentStatus === "paid" ? "succeeded" : "refunded";

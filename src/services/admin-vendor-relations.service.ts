@@ -1,6 +1,7 @@
 /** @format */
 
 import mongoose from "mongoose";
+import { vendorVisibleOrderFilter } from "../util/order-visibility.util.js";
 import { HttpStatus } from "../config/http.config.js";
 import { ErrorCode } from "../enums/error-code.enum.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
@@ -340,7 +341,8 @@ export class AdminVendorRelationsService {
     const [orderCounts, refundCounts, delayCounts, recentWarnings] =
       await Promise.all([
         Order.aggregate<{ _id: any; count: number }>([
-          { $match: { vendorId: { $in: vendorIds } } },
+          // Real orders only — never unpaid/abandoned checkouts.
+          { $match: { vendorId: { $in: vendorIds }, ...vendorVisibleOrderFilter() } },
           { $group: { _id: "$vendorId", count: { $sum: 1 } } },
         ]),
         RefundRequest.aggregate<{ _id: any; count: number }>([
@@ -428,7 +430,7 @@ export class AdminVendorRelationsService {
     );
 
     const [totalOrders, refunds, delays, hasRecentWarning] = await Promise.all([
-      Order.countDocuments({ vendorId: vendor._id }),
+      Order.countDocuments({ vendorId: vendor._id, ...vendorVisibleOrderFilter() }),
       RefundRequest.countDocuments({ vendorId: vendor._id }),
       VendorIssue.countDocuments({
         vendorId: vendor._id,

@@ -50,6 +50,21 @@ type EnvConfig = {
   // request-signing secrets. Read at call time by util/secret-box.util.ts;
   // optional until a webhook or signed partner credential is configured.
   PARTNER_SECRETS_KEY?: string;
+  // An unpaid checkout (Order "pending_payment") is closed by the expiry job
+  // once it is older than this many minutes AND Paystack confirms it was not
+  // paid. Default 30.
+  ORDER_PAYMENT_TTL_MINUTES: number;
+  // Hard ceiling: past this age an unpaid checkout is closed even when
+  // Paystack can't be reached or still reports it "pending" (a payment that
+  // lands later is refunded automatically). Default 24.
+  ORDER_PAYMENT_MAX_AGE_HOURS: number;
+};
+
+// Falls back to the default for missing, non-numeric or non-positive values,
+// so a typo in an env file can never disable a safety timer.
+const positiveNumber = (raw: string, fallback: number): number => {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 };
 
 const getEnvConfig = (): EnvConfig => {
@@ -92,12 +107,14 @@ const getEnvConfig = (): EnvConfig => {
     RESET_PASSWORD_TOKEN_TTL_MINUTES: Number(
       getEnv("RESET_PASSWORD_TOKEN_TTL_MINUTES") || "30",
     ),
-    SEARCH_RADIUS_KM: Number(getEnv("SEARCH_RADIUS_KM") || "25"),
+    SEARCH_RADIUS_KM: Number(getEnv("SEARCH_RADIUS_KM") || "5"),
     CRON_SECRET: getEnv("CRON_SECRET"),
     LEDGER_CHECKPOINT_EMAIL: getEnv("LEDGER_CHECKPOINT_EMAIL"),
     DOCS_USERNAME: getEnv("DOCS_USERNAME"),
     DOCS_PASSWORD: getEnv("DOCS_PASSWORD"),
     PARTNER_SECRETS_KEY: getEnv("PARTNER_SECRETS_KEY"),
+    ORDER_PAYMENT_TTL_MINUTES: positiveNumber(getEnv("ORDER_PAYMENT_TTL_MINUTES"), 30),
+    ORDER_PAYMENT_MAX_AGE_HOURS: positiveNumber(getEnv("ORDER_PAYMENT_MAX_AGE_HOURS"), 24),
   };
 };
 
