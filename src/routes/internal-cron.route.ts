@@ -133,6 +133,11 @@ class InternalCronRouter {
       cronAuthMiddleware,
       this.controller.expireUnpaidOrders,
     );
+    this.router.get(
+      "/payouts/reconcile",
+      cronAuthMiddleware,
+      this.controller.reconcilePayoutTransfers,
+    );
   }
 }
 

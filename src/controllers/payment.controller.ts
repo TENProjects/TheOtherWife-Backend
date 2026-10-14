@@ -4,6 +4,7 @@ import type { Request, Response } from "express";
 import { handleAsyncControl } from "../middlewares/handle-async-control.middleware.js";
 import { PaymentService } from "../services/payment.service.js";
 import { HttpStatus } from "../config/http.config.js";
+import { payoutTransferService } from "../services/payout-transfer.service.js";
 
 // The only Paystack references this platform ever issues: orders
 // ("tow_" + 32 hex) and meal plans ("tow_mp_" + 32 hex).
@@ -35,6 +36,27 @@ export class PaymentController {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
     return res.redirect(302, target);
+  };
+
+  // Paystack's "transfer approval URL": before releasing a transfer, Paystack
+  // asks whether we started it. 200 = approve, 400 = decline. Read-only — it
+  // never changes state — and only transfers this server started, for the
+  // exact amount and recipient, are approved. A signature, when sent, must be
+  // valid.
+  approvePaystackTransfer = async (req: Request, res: Response) => {
+    try {
+      const signature = req.headers["x-paystack-signature"] as string | undefined;
+      if (signature && !this.paymentService.verifyPaystackSignature(req.rawBody ?? "", signature)) {
+        return res.status(HttpStatus.BAD_REQUEST).json({ status: "error", message: "Invalid signature" });
+      }
+      const approved = await payoutTransferService.isApprovedTransfer(req.body ?? {});
+      return res
+        .status(approved ? HttpStatus.OK : HttpStatus.BAD_REQUEST)
+        .json({ status: approved ? "ok" : "error" });
+    } catch {
+      // Any doubt = decline; the payout can be retried or paid manually.
+      return res.status(HttpStatus.BAD_REQUEST).json({ status: "error" });
+    }
   };
 
   handlePaystackWebhook = handleAsyncControl(

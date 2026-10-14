@@ -58,6 +58,12 @@ type EnvConfig = {
   // Paystack can't be reached or still reports it "pending" (a payment that
   // lands later is refunded automatically). Default 24.
   ORDER_PAYMENT_MAX_AGE_HOURS: number;
+  // Automatic vendor payouts (Paystack Transfers). Off unless explicitly
+  // "true"; limits live here, not in the admin UI, so a compromised admin
+  // account cannot raise them.
+  PAYOUT_TRANSFERS_ENABLED: boolean;
+  PAYOUT_TRANSFER_MAX_AMOUNT: number;
+  PAYOUT_TRANSFER_DAILY_LIMIT: number;
 };
 
 // Falls back to the default for missing, non-numeric or non-positive values,
@@ -115,6 +121,9 @@ const getEnvConfig = (): EnvConfig => {
     PARTNER_SECRETS_KEY: getEnv("PARTNER_SECRETS_KEY"),
     ORDER_PAYMENT_TTL_MINUTES: positiveNumber(getEnv("ORDER_PAYMENT_TTL_MINUTES"), 30),
     ORDER_PAYMENT_MAX_AGE_HOURS: positiveNumber(getEnv("ORDER_PAYMENT_MAX_AGE_HOURS"), 24),
+    PAYOUT_TRANSFERS_ENABLED: getEnv("PAYOUT_TRANSFERS_ENABLED") === "true",
+    PAYOUT_TRANSFER_MAX_AMOUNT: positiveNumber(getEnv("PAYOUT_TRANSFER_MAX_AMOUNT"), 200000),
+    PAYOUT_TRANSFER_DAILY_LIMIT: positiveNumber(getEnv("PAYOUT_TRANSFER_DAILY_LIMIT"), 1000000),
   };
 };
 

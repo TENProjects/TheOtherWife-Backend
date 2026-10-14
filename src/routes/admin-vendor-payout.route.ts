@@ -4,6 +4,11 @@ import { Router } from "express";
 import { VendorWalletController } from "../controllers/vendor-wallet.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
+import { requireAdminRole } from "../middlewares/require-admin-role.middleware.js";
+
+// Moving money (approve, reject, mark paid, send) is limited to finance
+// roles; support agents can still view payout requests.
+const financeRolesOnly = requireAdminRole(["super_admin", "manager"]);
 import {
   adminRateLimitMiddleware,
   adminSensitiveActionRateLimitMiddleware,
@@ -86,8 +91,20 @@ class AdminVendorPayoutRouter {
   initializeRoutes() {
     this.router.get("/", this.vendorWalletController.getAdminPayoutRequests);
     this.router.get("/:requestId", this.vendorWalletController.getAdminPayoutRequestById);
+    this.router.get(
+      "/:requestId/transfer-preview",
+      financeRolesOnly,
+      this.vendorWalletController.getPayoutTransferPreview,
+    );
+    this.router.post(
+      "/:requestId/send",
+      financeRolesOnly,
+      adminSensitiveActionRateLimitMiddleware,
+      this.vendorWalletController.sendPayoutTransfer,
+    );
     this.router.patch(
       "/:requestId",
+      financeRolesOnly,
       adminSensitiveActionRateLimitMiddleware,
       this.vendorWalletController.updateAdminPayoutRequest,
     );

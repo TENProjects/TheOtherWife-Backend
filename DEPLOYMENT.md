@@ -156,6 +156,37 @@ so the Paystack page returns straight to the app after payment. The endpoint
 only validates the reference and redirects to `tow://payment-complete`; leave
 it unset until then.
 
+**Automatic vendor payouts (Paystack Transfers).** Off by default
+(`PAYOUT_TRANSFERS_ENABLED=false`): payouts stay manual — approve, pay by
+bank transfer, then "Mark as paid". To switch automatic payouts on:
+
+1. Paystack dashboard (business owner): Transfers enabled for the business;
+   the Paystack balance funded; **Settings → Preferences → transfer OTP off**
+   (API transfers can't pass an OTP); and, recommended, the **transfer
+   approval URL** set to `https://<api-domain>/api/v1/payments/paystack/transfer-approval`
+   (Paystack then asks our server before releasing each transfer). Transfer
+   events arrive on the existing webhook URL; nothing else to configure.
+2. `.env.prod`:
+   ```
+   PAYOUT_TRANSFERS_ENABLED=true
+   PAYOUT_TRANSFER_MAX_AMOUNT=200000     # naira, per payout
+   PAYOUT_TRANSFER_DAILY_LIMIT=1000000   # naira, rolling 24 hours
+   ```
+   The limits live here (not in the admin UI) on purpose. Redeploy after
+   changing them.
+3. Install the cron file again (it carries the `payouts/reconcile` line,
+   which settles transfers still waiting on the bank every 5 minutes).
+
+Safeguards: only super admins and managers can approve, send or mark
+payouts paid; the admin must type the bank's account name to send; the
+vendor's available balance, the Paystack balance and both limits are checked
+on the server; each request can have only one transfer in flight; a
+transfer's success is confirmed with Paystack before the request is marked
+paid; a reversed transfer restores the vendor's balance; anything that
+doesn't match what was sent is held as "needs review". **Kill switch:** set
+`PAYOUT_TRANSFERS_ENABLED=false` and redeploy — transfers already sent still
+settle; nothing new is sent.
+
 Partner webhooks and partner request signing also need `PARTNER_SECRETS_KEY`
 in `.env.prod`: 32 random bytes, base64, generated once and kept. Changing it
 later makes every stored webhook and signing secret unreadable, and they would

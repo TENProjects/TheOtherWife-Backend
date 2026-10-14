@@ -42,6 +42,9 @@ export const ledgerCheckpointEmail: string | undefined =
   envconfig.LEDGER_CHECKPOINT_EMAIL;
 export const orderPaymentTtlMinutes: number = envconfig.ORDER_PAYMENT_TTL_MINUTES;
 export const orderPaymentMaxAgeHours: number = envconfig.ORDER_PAYMENT_MAX_AGE_HOURS;
+export const payoutTransfersEnabled: boolean = envconfig.PAYOUT_TRANSFERS_ENABLED;
+export const payoutTransferMaxAmount: number = envconfig.PAYOUT_TRANSFER_MAX_AMOUNT;
+export const payoutTransferDailyLimit: number = envconfig.PAYOUT_TRANSFER_DAILY_LIMIT;
 
 console.log("port", !!port);
 console.log("hostName", !!hostName);

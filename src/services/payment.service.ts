@@ -17,6 +17,7 @@ import {
 import { transaction } from "../util/transaction.util.js";
 import { PaymentLedgerService } from "./payment-ledger.service.js";
 import { orderPaymentService } from "./order-payment.service.js";
+import { payoutTransferService } from "./payout-transfer.service.js";
 
 type InitializePaystackInput = {
   email: string;
@@ -154,6 +155,11 @@ export class PaymentService {
         HttpStatus.BAD_REQUEST,
         ErrorCode.AUTH_UNAUTHORIZED_ACCESS,
       );
+    }
+
+    // Vendor payouts sent through Paystack Transfers.
+    if (typeof event.event === "string" && event.event.startsWith("transfer.")) {
+      return payoutTransferService.handleTransferWebhook(event);
     }
 
     if (event.event !== "charge.success" && event.event !== "charge.failed") {

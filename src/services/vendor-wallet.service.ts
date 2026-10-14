@@ -521,6 +521,9 @@ export class VendorWalletService {
       rejectionReason?: string;
       allocations?: MarkPaidAllocationInput[];
     },
+    // Internal only (never from a request body): the Paystack transfer path
+    // records a confirmed payout through this same function.
+    options: { actorType?: "admin" | "webhook" | "system"; viaTransfer?: boolean } = {},
   ) => {
     if (!payload.status && payload.action) {
       const actionToStatus: Record<string, AdminPayoutStatus> = {
@@ -542,6 +545,23 @@ export class VendorWalletService {
             "Payout request not found",
             HttpStatus.NOT_FOUND,
             ErrorCode.RESOURCE_NOT_FOUND,
+          );
+        }
+
+        // While Paystack is sending this payout (or its outcome needs a
+        // person to check it), nobody may mark it paid, reject it or change
+        // its amount by hand: the vendor could be paid twice.
+        const transferStatus = payoutRequest.transfer?.status;
+        if (
+          !options.viaTransfer &&
+          (transferStatus === "pending" || transferStatus === "needs_review")
+        ) {
+          throw new BadRequestException(
+            transferStatus === "pending"
+              ? "A Paystack payout for this request is in progress. Wait for it to finish before changing it."
+              : "This payout's Paystack transfer needs review. Check it in the Paystack dashboard before changing it.",
+            HttpStatus.CONFLICT,
+            ErrorCode.VALIDATION_ERROR,
           );
         }
 
@@ -763,7 +783,7 @@ export class VendorWalletService {
               payment,
               entryType: "vendor_payout_allocated",
               amount: allocation.amount,
-              actorType: "admin",
+              actorType: options.actorType ?? "admin",
               actorId: currentAdminUserId,
               metadata: {
                 payoutRequestId: (payoutRequest._id as mongoose.Types.ObjectId).toString(),
@@ -820,5 +840,46 @@ export class VendorWalletService {
     )(adminUserId, requestId);
 
     return { payoutRequest: result };
+  };
+
+  // The bank returned a Paystack payout we had already recorded as paid:
+  // undo exactly what recording it did — each allocated amount goes back to
+  // the order it came from (so the vendor's balance is owed again), with a
+  // ledger entry per order — and reopen the request. Runs inside the
+  // caller's transaction.
+  reverseRecordedPayout = async (
+    session: ClientSession,
+    payoutRequestId: mongoose.Types.ObjectId,
+    reason: string,
+  ) => {
+    const allocations = await VendorPayoutAllocation.find({ payoutRequestId }).session(session);
+
+    for (const allocation of allocations) {
+      const payment = await Payment.findById(allocation.paymentId).session(session);
+      if (!payment) continue;
+      payment.vendorSettledAmount = Math.max(
+        Math.round((payment.vendorSettledAmount - allocation.allocatedAmount) * 100) / 100,
+        0,
+      );
+      payment.settlementStatus =
+        payment.vendorSettledAmount <= 0
+          ? "unsettled"
+          : payment.vendorSettledAmount < payment.vendorNetAmount
+          ? "partially_paid"
+          : "paid";
+      await payment.save({ session });
+
+      await this.paymentLedgerService.record(session, {
+        payment,
+        entryType: "vendor_payout_reversed",
+        amount: allocation.allocatedAmount,
+        actorType: "webhook",
+        metadata: { payoutRequestId: payoutRequestId.toString(), reason },
+      });
+    }
+
+    await VendorPayoutAllocation.deleteMany({ payoutRequestId }).session(session);
+
+    return { reversedAllocations: allocations.length };
   };
 }

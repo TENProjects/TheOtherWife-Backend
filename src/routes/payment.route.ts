@@ -46,6 +46,7 @@ class PaymentRouter {
   initializeRoutes() {
     this.router.post("/webhook", this.paymentController.handlePaystackWebhook);
     this.router.get("/paystack/return", this.paymentController.paystackReturn);
+    this.router.post("/paystack/transfer-approval", this.paymentController.approvePaystackTransfer);
   }
 }
 

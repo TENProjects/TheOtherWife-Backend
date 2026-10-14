@@ -5,6 +5,7 @@ import { HttpStatus } from "../config/http.config.js";
 import { handleAsyncControl } from "../middlewares/handle-async-control.middleware.js";
 import { VendorWalletService } from "../services/vendor-wallet.service.js";
 import { logAdminAction } from "../util/audit-log.util.js";
+import { payoutTransferService } from "../services/payout-transfer.service.js";
 
 export class VendorWalletController {
   private vendorWalletService: VendorWalletService;
@@ -148,6 +149,50 @@ export class VendorWalletController {
       return res.status(HttpStatus.OK).json({
         status: "ok",
         message: "Vendor payout request fetched successfully",
+        data: result,
+      });
+    },
+  );
+
+  // What an automatic payout would do, and everything blocking it.
+  getPayoutTransferPreview = handleAsyncControl(
+    async (req: Request<{ requestId: string }>, res: Response) => {
+      const preview = await payoutTransferService.preview(req.params.requestId);
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: "Payout transfer preview fetched successfully",
+        data: preview,
+      });
+    },
+  );
+
+  // Send an approved payout through Paystack. The admin must confirm the
+  // bank's account name shown in the preview.
+  sendPayoutTransfer = handleAsyncControl(
+    async (req: Request<{ requestId: string }, {}, { confirmAccountName?: unknown }>, res: Response) => {
+      const adminUserId = String(req.user?._id);
+      const confirmAccountName =
+        typeof req.body?.confirmAccountName === "string" ? req.body.confirmAccountName.slice(0, 200) : "";
+      const result = await payoutTransferService.send(adminUserId, req.params.requestId, confirmAccountName);
+
+      logAdminAction({
+        adminUserId,
+        action: "payout.transfer.send",
+        targetType: "VendorPayoutRequest",
+        targetId: req.params.requestId,
+        metadata: { transferStatus: result.transfer?.status, amount: result.transfer?.amount },
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      });
+
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message:
+          result.transfer?.status === "success"
+            ? "Payout sent and confirmed"
+            : result.transfer?.status === "failed"
+            ? "Paystack did not send the payout"
+            : "Payout sent to Paystack — waiting for the bank",
         data: result,
       });
     },

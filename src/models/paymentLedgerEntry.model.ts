@@ -17,6 +17,7 @@ export type PaymentLedgerEntryType =
   | "payment_refunded"
   | "vendor_settlement_synced"
   | "vendor_payout_allocated"
+  | "vendor_payout_reversed"
   | "vendor_split_settled"
   | "vendor_clawback_applied";
 
@@ -103,6 +104,8 @@ const PaymentLedgerEntrySchema = new Schema(
         "payment_refunded",
         "vendor_settlement_synced",
         "vendor_payout_allocated",
+        // A Paystack payout the bank returned after it was recorded as paid.
+        "vendor_payout_reversed",
         "vendor_split_settled",
         "vendor_clawback_applied",
       ],

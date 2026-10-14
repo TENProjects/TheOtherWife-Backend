@@ -9,6 +9,7 @@ import { AccountDeletionService } from "../services/account-deletion.service.js"
 import { ApiResponse } from "../util/response.util.js";
 import { partnerWebhookService } from "../services/partner-webhook.service.js";
 import { orderPaymentService } from "../services/order-payment.service.js";
+import { payoutTransferService } from "../services/payout-transfer.service.js";
 
 export class InternalCronController {
   private mealPlanFulfillmentService: MealPlanFulfillmentService;
@@ -41,6 +42,19 @@ export class InternalCronController {
           ? "Payment ledger checkpoint emitted successfully"
           : "Payment ledger is empty — nothing to checkpoint",
         data: checkpoint,
+      } as ApiResponse);
+    },
+  );
+
+  // Settles automatic vendor payouts still waiting on the bank by asking
+  // Paystack directly (backs up the transfer webhooks).
+  reconcilePayoutTransfers = handleAsyncControl(
+    async (_req: Request, res: Response): Promise<Response> => {
+      const result = await payoutTransferService.reconcilePendingTransfers();
+      return res.status(HttpStatus.OK).json({
+        status: "ok",
+        message: `Checked ${result.scanned} payout transfer(s)`,
+        data: result,
       } as ApiResponse);
     },
   );
