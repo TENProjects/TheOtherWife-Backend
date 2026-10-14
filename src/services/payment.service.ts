@@ -3,8 +3,6 @@
 import crypto from "crypto";
 import { ClientSession } from "mongoose";
 import Payment, { PaymentDocument } from "../models/payment.model.js";
-import Order from "../models/order.model.js";
-import Cart from "../models/cart.model.js";
 import ScheduledMeal from "../models/scheduledMeal.model.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
@@ -17,10 +15,6 @@ import {
   paystackBaseUrl,
 } from "../constants/env.js";
 import { transaction } from "../util/transaction.util.js";
-import { PromoService } from "./promo.service.js";
-import { WalletService } from "./wallet.service.js";
-import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
-import { VendorWalletService } from "./vendor-wallet.service.js";
 import { PaymentLedgerService } from "./payment-ledger.service.js";
 import { orderPaymentService } from "./order-payment.service.js";
 
@@ -46,15 +40,9 @@ type PaystackInitializeResponse = {
 };
 
 export class PaymentService {
-  private promoService: PromoService;
-  private walletService: WalletService;
-  private vendorWalletService: VendorWalletService;
   private paymentLedgerService: PaymentLedgerService;
 
   constructor() {
-    this.promoService = new PromoService();
-    this.walletService = new WalletService();
-    this.vendorWalletService = new VendorWalletService();
     this.paymentLedgerService = new PaymentLedgerService();
   }
 

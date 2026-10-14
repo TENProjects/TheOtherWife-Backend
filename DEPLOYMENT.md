@@ -137,9 +137,11 @@ Roll it out dry-run first. After deploying, print what the job *would* do
 
 ```bash
 cd /opt/the-other-wife-backend
-printf 'Authorization: Bearer %s\n' "$(grep -E '^CRON_SECRET=' .env.prod | tail -n 1 | cut -d= -f2- | tr -d '\r\"')" \
+printf 'Authorization: Bearer %s\n' "$(grep -E '^CRON_SECRET=' .env.prod | tail -n 1 | cut -d= -f2- | tr -d '\r"')" \
   | curl -fsS -H @- "http://127.0.0.1:8000/api/v1/internal/cron/orders/expire-unpaid?dryRun=1&limit=200" | jq .
 ```
+
+(Without `jq` installed, drop the final `| jq .` — the JSON prints either way.)
 
 Check `data.items`: every entry should be an abandoned checkout, and any
 `"action": "confirm"` is a payment Paystack reports as successful (it will

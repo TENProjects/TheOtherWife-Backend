@@ -14,6 +14,8 @@ import { PaymentLedgerService } from "./payment-ledger.service.js";
 import { financeAggregationService } from "./finance-aggregation.service.js";
 import {
   PLATFORM_FEE_PERCENT,
+  platformFeeEarned,
+  platformFeeEarnedExpr,
   PROMO_COST_SHARE,
   refundAbsorbed as computeRefundAbsorbed,
   refundedVatShare,
@@ -175,10 +177,7 @@ export class FinancialsService {
             subtotal: "$order.subtotal",
             items: "$order.items",
             commission: {
-              $add: [
-                { $ifNull: ["$vendorPlatformFeeAmount", 0] },
-                { $ifNull: ["$order.serviceCharge", 0] },
-              ],
+              $add: [platformFeeEarnedExpr(), { $ifNull: ["$order.serviceCharge", 0] }],
             },
           },
         },
@@ -537,7 +536,7 @@ export class FinancialsService {
       clawbackRecovered,
     });
 
-    const towCommission = counts ? payment?.vendorPlatformFeeAmount ?? 0 : 0;
+    const towCommission = counts && payment ? platformFeeEarned(payment, order) : 0;
     const processingFee = counts ? order.serviceCharge : 0;
     const promoDiscountCost = counts
       ? Math.round((order.discountAmount ?? 0) * PROMO_COST_SHARE)

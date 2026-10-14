@@ -101,7 +101,10 @@ export class RefundService {
 
     // A customer may only request a refund on their own order; an admin can
     // request one on a customer's behalf.
-    if (requesterType !== "admin" && order.customerId.toString() !== requesterId) {
+    // requesterId arrives as the auth user's ObjectId despite its type, so
+    // compare string forms — a strict !== against the object always failed
+    // and refused every customer's refund request with 403.
+    if (requesterType !== "admin" && order.customerId.toString() !== String(requesterId)) {
       throw new UnauthorizedExceptionError(
         "You can only request a refund for your own order",
         HttpStatus.FORBIDDEN,

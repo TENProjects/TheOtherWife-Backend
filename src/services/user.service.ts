@@ -14,7 +14,6 @@ import Vendor from "../models/vendor.model.js";
 import Customer from "../models/customer.model.js";
 import Order from "../models/order.model.js";
 import Meal from "../models/meal.model.js";
-import Payment from "../models/payment.model.js";
 import { AuthService } from "./auth.service.js";
 import { NotificationService } from "./notification.service.js";
 import { PushNotificationService } from "./push-notification.service.js";

@@ -6,6 +6,7 @@ import RefundRequest from "../models/refundRequest.model.js";
 import {
   emptyFinanceComponents,
   FinanceComponents,
+  platformFeeEarnedExpr,
   PROMO_COST_SHARE,
   refundAbsorbed,
   refundedVatShare,
@@ -145,7 +146,7 @@ export class FinanceAggregationService {
           $group: {
             _id: groupKey,
             platformFees: {
-              $sum: { $cond: ["$stood", { $ifNull: ["$vendorPlatformFeeAmount", 0] }, 0] },
+              $sum: { $cond: ["$stood", platformFeeEarnedExpr(), 0] },
             },
             serviceCharges: {
               $sum: { $cond: ["$stood", { $ifNull: ["$order.serviceCharge", 0] }, 0] },

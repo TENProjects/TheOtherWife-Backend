@@ -24,7 +24,7 @@ import { isVendorReceivingOrders } from "../util/vendor-opening-hours.util.js";
 import { WalletService } from "./wallet.service.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
 import { orderPaymentService } from "./order-payment.service.js";
-import { VENDOR_PAYOUT_RATE } from "../util/finance-definitions.util.js";
+import { vendorSplitOf } from "../util/finance-definitions.util.js";
 import {
   computeCustomizationDelta,
   MealCustomization,
@@ -498,10 +498,8 @@ export class CheckoutService {
         // the Paystack fee, VAT, or the processing fee.
         const effectiveSubtotal =
           checkoutContext.pricing.subtotal - checkoutContext.pricing.discountAmount;
-        const vendorNetAmount = Math.max(
-          Math.round(effectiveSubtotal * VENDOR_PAYOUT_RATE),
-          0,
-        );
+        const { vendorGrossAmount, vendorNetAmount, vendorPlatformFeeAmount } =
+          vendorSplitOf(effectiveSubtotal);
         const paystackFeeAmount = calculatePaystackFee(
           checkoutContext.pricing.totalAmount,
         );
@@ -531,8 +529,8 @@ export class CheckoutService {
                   paystackAmountDue,
                 },
               },
-              vendorGrossAmount: effectiveSubtotal,
-              vendorPlatformFeeAmount: effectiveSubtotal - vendorNetAmount,
+              vendorGrossAmount,
+              vendorPlatformFeeAmount,
               vendorNetAmount,
               vendorSettledAmount: 0,
               paystackFeeAmount,

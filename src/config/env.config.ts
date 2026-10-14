@@ -107,7 +107,7 @@ const getEnvConfig = (): EnvConfig => {
     RESET_PASSWORD_TOKEN_TTL_MINUTES: Number(
       getEnv("RESET_PASSWORD_TOKEN_TTL_MINUTES") || "30",
     ),
-    SEARCH_RADIUS_KM: Number(getEnv("SEARCH_RADIUS_KM") || "10"),
+    SEARCH_RADIUS_KM: Number(getEnv("SEARCH_RADIUS_KM") || "5"),
     CRON_SECRET: getEnv("CRON_SECRET"),
     LEDGER_CHECKPOINT_EMAIL: getEnv("LEDGER_CHECKPOINT_EMAIL"),
     DOCS_USERNAME: getEnv("DOCS_USERNAME"),

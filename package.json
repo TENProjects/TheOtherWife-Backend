@@ -11,7 +11,8 @@
     "dev": "tsx watch app.ts",
     "backfill:vendor-wallet": "tsx src/scripts/backfill-vendor-wallet.ts",
     "backfill:address-location": "tsx src/scripts/backfill-address-location.ts",
-    "diagnose:search-radius": "tsx src/scripts/diagnose-search-radius.ts"
+    "diagnose:search-radius": "tsx src/scripts/diagnose-search-radius.ts",
+    "report:vendor-balances": "tsx src/scripts/report-vendor-balances.ts"
   },
   "keywords": [],
   "author": "paul elisha",

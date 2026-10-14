@@ -3,6 +3,8 @@
 import mongoose, { ClientSession } from "mongoose";
 import Order from "../models/order.model.js";
 import Meal from "../models/meal.model.js";
+import Payment from "../models/payment.model.js";
+import { vendorSplitOf } from "../util/finance-definitions.util.js";
 import RefundRequest from "../models/refundRequest.model.js";
 import FinancialSettings from "../models/financialSettings.model.js";
 import { NotFoundException } from "../errors/not-found-exception.error.js";
@@ -115,6 +117,33 @@ export class OrderService {
         ...item,
         mealImage: imageByMealId.get(String(item.mealId)),
       }));
+      return obj;
+    });
+  };
+
+  // What the vendor actually earns on each order: their 80% of the
+  // (discounted) meal subtotal as recorded on the payment, less any clawback
+  // (a cancelled or rejected order earns nothing). The order total also holds
+  // TOW's service charge, VAT and 20% platform fee, so it must never be shown
+  // to a vendor as their earnings.
+  private attachVendorEarnings = async (orders: any[]) => {
+    const payments = await Payment.find({
+      orderId: { $in: orders.map((order) => order._id) },
+      context: { $ne: "meal_plan" },
+    })
+      .select("orderId vendorNetAmount vendorClawbackAmount")
+      .lean();
+    const paymentByOrderId = new Map(
+      payments.map((payment) => [String(payment.orderId), payment]),
+    );
+
+    return orders.map((order) => {
+      const obj = order.toObject ? order.toObject() : order;
+      const payment = paymentByOrderId.get(String(obj._id));
+      const net =
+        payment?.vendorNetAmount ??
+        vendorSplitOf((obj.subtotal ?? 0) - (obj.discountAmount ?? 0)).vendorNetAmount;
+      obj.vendorEarnings = Math.max(net - (payment?.vendorClawbackAmount ?? 0), 0);
       return obj;
     });
   };
@@ -250,7 +279,7 @@ export class OrderService {
       .populate("customerId", "firstName lastName email phoneNumber")
       .sort({ createdAt: -1 });
 
-    return { orders };
+    return { orders: await this.attachVendorEarnings(orders) };
   };
 
   getVendorOrderById = async (userId: string, orderId: string) => {
@@ -277,7 +306,8 @@ export class OrderService {
 
     if (!order) throw orderNotFound();
 
-    return { order };
+    const [withEarnings] = await this.attachVendorEarnings([order]);
+    return { order: withEarnings };
   };
 
   // One atomic, guarded step of the vendor's delivery progress.

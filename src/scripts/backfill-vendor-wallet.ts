@@ -6,6 +6,10 @@ import Order from "../models/order.model.js";
 import Payment from "../models/payment.model.js";
 import VendorPayoutAllocation from "../models/vendorPayoutAllocation.model.js";
 import VendorPayoutRequest from "../models/vendorPayoutRequest.model.js";
+import { vendorSplitOf } from "../util/finance-definitions.util.js";
+
+// npm run backfill:vendor-wallet -- --dry-run   reports what would change.
+const DRY_RUN = process.argv.includes("--dry-run");
 
 const db = new Db();
 
@@ -25,13 +29,22 @@ const toObjectId = (value: unknown) => {
   return null;
 };
 
+// In dry-run, count what would change instead of updating it.
+const migratePayoutRequests = async (
+  filter: Record<string, unknown>,
+  update: Record<string, unknown>,
+) =>
+  DRY_RUN
+    ? { modifiedCount: await VendorPayoutRequest.countDocuments(filter) }
+    : VendorPayoutRequest.updateMany(filter, update);
+
 const backfillVendorPayoutRequests = async () => {
-  const pendingToRequested = await VendorPayoutRequest.updateMany(
+  const pendingToRequested = await migratePayoutRequests(
     { status: "pending" as any },
     { $set: { status: "requested" } },
   );
 
-  const paidToApprovedPaid = await VendorPayoutRequest.updateMany(
+  const paidToApprovedPaid = await migratePayoutRequests(
     { status: "paid" as any },
     {
       $set: {
@@ -41,7 +54,7 @@ const backfillVendorPayoutRequests = async () => {
     },
   );
 
-  const setPaymentStatusForPaidArtifacts = await VendorPayoutRequest.updateMany(
+  const setPaymentStatusForPaidArtifacts = await migratePayoutRequests(
     {
       paymentStatus: { $exists: false },
       $or: [{ paidAt: { $exists: true, $ne: null } }, { payoutReference: { $exists: true, $ne: "" } }],
@@ -53,7 +66,7 @@ const backfillVendorPayoutRequests = async () => {
     },
   );
 
-  const setDefaultPaymentStatus = await VendorPayoutRequest.updateMany(
+  const setDefaultPaymentStatus = await migratePayoutRequests(
     { paymentStatus: { $exists: false } },
     { $set: { paymentStatus: "unpaid" } },
   );
@@ -84,7 +97,18 @@ const backfillPaymentVendorSettlement = async () => {
     allocatedByPaymentId.set(row._id.toString(), row.allocated);
   }
 
-  const payments = await Payment.find({}).select(
+  // Only order payments that never had a vendor split recorded. A payment that
+  // already has one (every checkout since the 80/20 rule) is never rewritten:
+  // re-running this script must not change what any vendor is owed. (It used
+  // to rewrite every payment with the pre-80/20 formula.)
+  const payments = await Payment.find({
+    context: { $ne: "meal_plan" },
+    $or: [
+      { vendorGrossAmount: { $exists: false } },
+      { vendorPlatformFeeAmount: { $exists: false } },
+      { vendorNetAmount: { $exists: false } },
+    ],
+  }).select(
     "_id orderId vendorId status paidAt vendorGrossAmount vendorPlatformFeeAmount vendorNetAmount vendorSettledAmount settlementStatus settlementEligibleAt",
   );
 
@@ -98,15 +122,16 @@ const backfillPaymentVendorSettlement = async () => {
       continue;
     }
 
-    const order = await Order.findById(orderId).select("vendorId totalAmount serviceCharge");
+    const order = await Order.findById(orderId).select("vendorId subtotal discountAmount");
     if (!order) {
       skippedMissingOrder += 1;
       continue;
     }
 
-    const vendorGrossAmount = Math.max(order.totalAmount ?? 0, 0);
-    const vendorPlatformFeeAmount = Math.max(order.serviceCharge ?? 0, 0);
-    const vendorNetAmount = Math.max(vendorGrossAmount - vendorPlatformFeeAmount, 0);
+    // The vendor keeps 80% of the (discounted) meal subtotal; TOW's platform
+    // fee is the other 20% — the same rule checkout uses.
+    const { vendorGrossAmount, vendorPlatformFeeAmount, vendorNetAmount } =
+      vendorSplitOf((order.subtotal ?? 0) - (order.discountAmount ?? 0));
 
     const allocationSettled = allocatedByPaymentId.get(payment._id.toString()) ?? 0;
     const existingSettled = Math.max(payment.vendorSettledAmount ?? 0, 0);
@@ -154,7 +179,9 @@ const backfillPaymentVendorSettlement = async () => {
     payment.settlementStatus = settlementStatus;
     payment.settlementEligibleAt = settlementEligibleAt;
 
-    await payment.save();
+    if (!DRY_RUN) {
+      await payment.save();
+    }
     updatedCount += 1;
   }
 
@@ -175,7 +202,7 @@ const run = async () => {
 
     console.log("Vendor payout request backfill:", payoutRequestResult);
     console.log("Payment settlement backfill:", paymentSettlementResult);
-    console.log("Backfill complete");
+    console.log(DRY_RUN ? "Dry run complete — nothing was changed" : "Backfill complete");
   } catch (error) {
     console.error("Backfill failed", error);
     process.exitCode = 1;
