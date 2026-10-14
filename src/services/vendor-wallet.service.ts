@@ -629,12 +629,49 @@ export class VendorWalletService {
             );
           }
 
+          // Allocations say which paid orders this payout settles. The admin
+          // can pass them explicitly; otherwise they are worked out here, in
+          // the same transaction: the vendor's oldest orders that still have
+          // money owed (never a clawed-back share), until the payout amount
+          // is covered. The checks below apply to both, unchanged.
           if (!Array.isArray(payload.allocations) || payload.allocations.length === 0) {
-            throw new BadRequestException(
-              "At least one payout allocation is required",
-              HttpStatus.BAD_REQUEST,
-              ErrorCode.VALIDATION_ERROR,
-            );
+            const amountToAllocate =
+              payoutRequest.approvedAmount > 0
+                ? payoutRequest.approvedAmount
+                : payoutRequest.requestedAmount;
+            const owedPayments = await Payment.find({
+              vendorId: payoutRequest.vendorId,
+              status: { $in: VENDOR_EARNING_PAYMENT_STATUSES },
+            })
+              .sort({ paidAt: 1, createdAt: 1 })
+              .select("vendorNetAmount vendorSettledAmount vendorClawbackAmount")
+              .session(session);
+
+            const autoAllocations: { paymentId: string; amount: number }[] = [];
+            let stillToAllocate = amountToAllocate;
+            for (const payment of owedPayments) {
+              if (stillToAllocate <= 0) break;
+              const owed = Math.max(
+                payment.vendorNetAmount -
+                  payment.vendorSettledAmount -
+                  (payment.vendorClawbackAmount ?? 0),
+                0,
+              );
+              if (owed <= 0) continue;
+              const amount = Math.min(owed, stillToAllocate);
+              autoAllocations.push({ paymentId: payment._id.toString(), amount });
+              stillToAllocate = Math.round((stillToAllocate - amount) * 100) / 100;
+            }
+
+            if (stillToAllocate > 0) {
+              throw new BadRequestException(
+                "This vendor's unpaid earnings don't cover the payout amount. Reduce the approved amount or check the vendor's orders.",
+                HttpStatus.BAD_REQUEST,
+                ErrorCode.VALIDATION_ERROR,
+              );
+            }
+
+            payload = { ...payload, allocations: autoAllocations };
           }
 
           const existingReference = await VendorPayoutRequest.findOne({
@@ -661,7 +698,7 @@ export class VendorWalletService {
             currency: string;
           }[] = [];
 
-          for (const allocation of payload.allocations) {
+          for (const allocation of payload.allocations ?? []) {
             this.assertPositiveAmount(allocation.amount, "Allocation amount");
             if (seenPaymentIds.has(allocation.paymentId)) {
               throw new BadRequestException(
@@ -762,7 +799,7 @@ export class VendorWalletService {
           payoutRequest.paymentStatus = "paid";
           payoutRequest.paidAt = new Date();
           payoutRequest.processedBy = new mongoose.Types.ObjectId(currentAdminUserId);
-          payoutRequest.payoutReference = payload.payoutReference.trim();
+          payoutRequest.payoutReference = (payload.payoutReference ?? "").trim();
           if (payload.note) {
             payoutRequest.note = payload.note;
           }
