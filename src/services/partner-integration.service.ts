@@ -87,6 +87,12 @@ const decodeCursor = (cursor: string): ListCursor | null => {
 // Adapter between the partner API and the referral/attribution core. A
 // partner can only pre-register leads and read the status of ITS OWN
 // submissions; it can never create, modify or approve TOW users or vendors.
+// A tap-to-join link for the person (opens the TOW app, which applies the
+// invite after sign-up — no code to type). Same secret as the claim token:
+// give it only to that person.
+const inviteUrlFor = (token: string) =>
+  `https://theotherwife.com/join?invite=${encodeURIComponent(token)}`;
+
 export class PartnerIntegrationService {
   private attributionService = new AttributionService();
 
@@ -274,6 +280,7 @@ export class PartnerIntegrationService {
         // Returned once. Single-use; the person enters/opens it after signing
         // up through the normal TOW flow. Re-issue via the /invite endpoint.
         claimToken: token,
+        inviteUrl: inviteUrlFor(token),
         campaignCode: code.code,
       },
     };
@@ -334,7 +341,7 @@ export class PartnerIntegrationService {
       );
     }
 
-    return { ...(await this.represent(submission)), claimToken: token };
+    return { ...(await this.represent(submission)), claimToken: token, inviteUrl: inviteUrlFor(token) };
   };
 
   getByExternalRef = async (
