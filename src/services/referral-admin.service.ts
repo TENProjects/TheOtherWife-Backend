@@ -34,11 +34,21 @@ import {
   generateReferralCode,
   normalizeReferralCode,
 } from "../util/referral.util.js";
+import { getTemplate } from "../util/get-template.util.js";
+import { mailer, mailSubject } from "./email.service.js";
 
 type ListResult<T> = {
   items: T[];
   pagination: { page: number; limit: number; total: number; totalPages: number };
 };
+
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -75,11 +85,26 @@ export class ReferralAdminService {
     adminUserId: string,
     body: { name: string; slug: string; contactEmail?: string; notes?: string },
   ) => {
-    try {
-      return await Partner.create({ ...body, createdBy: adminUserId });
-    } catch (error) {
+    const partner = await Partner.create({ ...body, createdBy: adminUserId }).catch((error) => {
       if (isDuplicateKey(error)) throw conflict("A partner with this slug already exists");
       throw error;
+    });
+    // Fire-and-forget: a mail outage must never fail partner creation.
+    if (partner.contactEmail) void this.sendPartnerWelcome(partner);
+    return partner;
+  };
+
+  // Notification only — never include API keys or webhook secrets here;
+  // those are handed over through a secure channel.
+  private sendPartnerWelcome = async (partner: PartnerDocument) => {
+    try {
+      const htmlTemplate = await getTemplate("src/templates", "partner-welcome.template.html");
+      const html = htmlTemplate
+        .replaceAll("{{partnerName}}", escapeHtml(partner.name))
+        .replaceAll("{{partnerSlug}}", escapeHtml(partner.slug));
+      await mailer.sendSystemAlert(partner.contactEmail!, mailSubject.partnerWelcome, html);
+    } catch (error) {
+      console.error(`Failed to send partner welcome email (partner ${partner._id}):`, error);
     }
   };
 

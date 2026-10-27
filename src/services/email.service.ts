@@ -15,6 +15,7 @@ const MailSubject = () => ({
   deleteAccountActivityCleared: "Your activity data has been cleared",
   deleteAccountVendorNotice: "Closing a vendor account",
   deleteAccountFinalized: "Your account has been deleted",
+  partnerWelcome: "Welcome to TheOtherWife partner programme",
 });
 
 export const mailSubject = MailSubject();
