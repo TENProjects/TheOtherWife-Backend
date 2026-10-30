@@ -65,14 +65,17 @@ const blockedRanges = (() => {
     ["198.18.0.0", 15], ["224.0.0.0", 4], ["240.0.0.0", 4],
   ];
   v4.forEach(([addr, prefix]) => list.addSubnet(addr, prefix, "ipv4"));
+  // No "::ffff:0:0/96" entry: Node's BlockList compares IPv4 addresses as
+  // IPv4-mapped IPv6, so that rule would block every IPv4 address. Mapped
+  // addresses (::ffff:10.0.0.1) are already caught by the IPv4 ranges above.
   const v6: Array<[string, number]> = [
-    ["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8], ["::ffff:0:0", 96],
+    ["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
   ];
   v6.forEach(([addr, prefix]) => list.addSubnet(addr, prefix, "ipv6"));
   return list;
 })();
 
-const isBlockedAddress = (address: string, family: number) =>
+export const isBlockedAddress = (address: string, family: number) =>
   blockedRanges.check(address, family === 6 ? "ipv6" : "ipv4");
 
 const notFound = (what: string) =>
