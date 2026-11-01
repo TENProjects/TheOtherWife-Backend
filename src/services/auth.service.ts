@@ -539,6 +539,17 @@ export class AuthService {
           );
         }
 
+        // An invited admin can only get in through their invitation link
+        // (admin-invite.service.ts), never around it — e.g. via a password
+        // reset plus email verification after the invite has expired.
+        if (user.userType === "admin" && user.adminInvitedBy && !user.adminInviteAcceptedAt) {
+          throw new UnauthorizedExceptionError(
+            "Activate your account with the invitation link we emailed you, or ask a super admin to resend it.",
+            HttpStatus.UNAUTHORIZED,
+            ErrorCode.AUTH_UNAUTHORIZED_ACCESS,
+          );
+        }
+
         // Checked only after the password is confirmed correct — otherwise
         // anyone could probe arbitrary emails with a junk password to learn
         // whether an account exists and is unverified, and worse, trigger a
@@ -831,7 +842,9 @@ export class AuthService {
         try {
           const user = await User.findOne({ email }).session(session);
 
-          if (!user) {
+          // Pending admin invites set their password through the invite link
+          // only. Same silent answer as an unknown email, so nothing leaks.
+          if (!user || (user.userType === "admin" && user.adminInvitedBy && !user.adminInviteAcceptedAt)) {
             return null;
           }
 

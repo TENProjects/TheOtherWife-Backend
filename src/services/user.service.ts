@@ -1056,7 +1056,11 @@ export class UserService {
 
     const [admins, total] = await Promise.all([
       User.find(query)
-        .select("firstName lastName email adminRole status createdAt")
+        // Invite fields let the dashboard show "Invited" and a Resend button.
+        // The token hash is select:false on the model and never included.
+        .select(
+          "firstName lastName email adminRole status createdAt adminInvitedBy adminInviteAcceptedAt adminInviteExpiresAt adminInviteEmailStatus",
+        )
         .sort({ createdAt: -1 })
         .skip((safePage - 1) * safeLimit)
         .limit(safeLimit),

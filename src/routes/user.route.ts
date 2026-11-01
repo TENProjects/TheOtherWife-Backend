@@ -18,6 +18,10 @@ import {
   adminSensitiveActionRateLimitMiddleware,
 } from "../middlewares/admin-rate-limit.middleware.js";
 import { requireAdminRole } from "../middlewares/require-admin-role.middleware.js";
+import { AdminInviteController } from "../controllers/admin-invite.controller.js";
+import { inviteAdminSchema } from "../zod-schema/admin-invite.schema.js";
+
+const adminInviteController = new AdminInviteController();
 
 /**
  * @swagger
@@ -503,10 +507,31 @@ class UserRouter {
       this.userController.updateUserStatus,
     );
 
+    // Preferred: invite by email; the invitee sets their own password
+    // (admin-invite.service.ts). Super admins only.
+    this.router.post(
+      "/admins/invite",
+      roleGuardMiddleware(["admin"]),
+      requireAdminRole(["super_admin"]),
+      adminSensitiveActionRateLimitMiddleware,
+      zodValidation(inviteAdminSchema),
+      adminInviteController.invite,
+    );
+    this.router.post(
+      "/admins/:userId/resend-invite",
+      roleGuardMiddleware(["admin"]),
+      requireAdminRole(["super_admin"]),
+      adminSensitiveActionRateLimitMiddleware,
+      adminInviteController.resend,
+    );
+
+    // Legacy direct creation, kept so the current admin dashboard keeps
+    // working until it switches to /admins/invite. Super admins only: a
+    // manager must never be able to create a super admin.
     this.router.post(
       "/admins",
       roleGuardMiddleware(["admin"]),
-      requireAdminRole(["super_admin", "manager"]),
+      requireAdminRole(["super_admin"]),
       adminSensitiveActionRateLimitMiddleware,
       zodValidation(createAdminUserSchema),
       this.userController.createAdminUser,

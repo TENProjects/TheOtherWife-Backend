@@ -305,7 +305,9 @@ export class UserController {
       });
 
       return res.status(HttpStatus.CREATED).json({
-        data: { accessToken, refreshToken, userWithoutPassword },
+        // The new admin's own session tokens are never returned to the
+        // admin who created the account.
+        data: { userWithoutPassword },
         status: "ok",
         message: "Admin user created successfully",
       } as ApiResponse);

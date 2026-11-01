@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Activate your admin account</title>
+  </head>
+  <body style="font-family: Arial, sans-serif; color: #222; line-height: 1.6">
+    <p>Hi {{firstName}},</p>
+    <p>
+      {{inviterName}} has invited you to the TheOtherWife admin dashboard as
+      <strong>{{roleLabel}}</strong>.
+    </p>
+    <p>To activate your account, choose your own password here:</p>
+    <p>
+      <a
+        href="{{inviteUrl}}"
+        style="display: inline-block; background: #e25c3d; color: #fff; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: bold"
+        >Activate my account</a
+      >
+    </p>
+    <p>
+      This link works once and expires in {{expiresHours}} hours. Nobody at
+      TheOtherWife will ever ask you for your password.
+    </p>
+    <p>
+      If you were not expecting this invitation, you can ignore this email: no
+      account can be used until the link is opened and a password is chosen.
+    </p>
+    <p>TheOtherWife</p>
+  </body>
+</html>

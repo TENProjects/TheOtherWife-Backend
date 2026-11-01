@@ -15,6 +15,10 @@ import {
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { authRateLimitMiddleware } from "../middlewares/auth-rate-limit.middleware.js";
 import { zodValidation } from "../middlewares/validation.js";
+import { AdminInviteController } from "../controllers/admin-invite.controller.js";
+import { acceptAdminInviteSchema, checkAdminInviteSchema } from "../zod-schema/admin-invite.schema.js";
+
+const adminInviteController = new AdminInviteController();
 
 /**
  * @openapi
@@ -467,6 +471,20 @@ class AuthRouter {
       this.authController.handleSignup,
     );
     this.router.get("/verify", this.authController.verifySignup);
+    // Admin invitation activation (admin-invite.service.ts). Public: the
+    // single-use token is the credential. Rate limited like login.
+    this.router.post(
+      "/admin-invite/check",
+      authRateLimitMiddleware,
+      zodValidation(checkAdminInviteSchema),
+      adminInviteController.check,
+    );
+    this.router.post(
+      "/admin-invite/accept",
+      authRateLimitMiddleware,
+      zodValidation(acceptAdminInviteSchema),
+      adminInviteController.accept,
+    );
     this.router.post(
       "/resend-verification",
       authRateLimitMiddleware,

@@ -46,6 +46,17 @@ export interface UserDocument extends Document {
   passwordResetEmailStatus?: "pending" | "sent" | "failed";
   passwordResetEmailLastAttemptAt?: Date;
   passwordResetEmailError?: string;
+  // Admin invitations (admin-invite.service.ts). A super admin invites by
+  // email; the invitee sets their own password through a single-use link.
+  // Only the SHA-256 of the link token is stored. The token hash is
+  // select:false so it never leaves the server in an ordinary query.
+  adminInviteTokenHash?: string;
+  adminInviteExpiresAt?: Date;
+  adminInvitedBy?: mongoose.Types.ObjectId;
+  adminInviteAcceptedAt?: Date;
+  adminInviteEmailStatus?: "pending" | "sent" | "failed";
+  adminInviteEmailLastAttemptAt?: Date;
+  adminInviteEmailError?: string;
   // Account-deletion flow (public, unauthenticated — see account-deletion.service.ts).
   // deletionOtpHash/deletionOtpExpiresAt/deletionOtpAttempts back the email-OTP
   // step; deletionSessionTokenHash/deletionSessionExpiresAt back the short-lived
@@ -200,6 +211,37 @@ const UserSchema = new Schema(
       type: String,
       required: false,
     },
+    adminInviteTokenHash: {
+      type: String,
+      required: false,
+      select: false,
+    },
+    adminInviteExpiresAt: {
+      type: Date,
+      required: false,
+    },
+    adminInvitedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+    },
+    adminInviteAcceptedAt: {
+      type: Date,
+      required: false,
+    },
+    adminInviteEmailStatus: {
+      type: String,
+      enum: ["pending", "sent", "failed"],
+      required: false,
+    },
+    adminInviteEmailLastAttemptAt: {
+      type: Date,
+      required: false,
+    },
+    adminInviteEmailError: {
+      type: String,
+      required: false,
+    },
     deletionOtpHash: {
       type: String,
       required: false,
@@ -267,5 +309,8 @@ UserSchema.methods.omitPassword = function (): Omit<
   const { passwordHash, ...user } = this.toObject();
   return user;
 };
+
+// Invite links are looked up by token hash; sparse so only pending invites are indexed.
+UserSchema.index({ adminInviteTokenHash: 1 }, { sparse: true });
 
 export default model<UserDocument>("User", UserSchema);
