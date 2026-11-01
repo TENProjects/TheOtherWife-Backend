@@ -809,7 +809,7 @@ export class VendorService {
 
   updateVendorInspectionStatus = async (
     vendorId: string,
-    inspectionStatus: "not_started" | "in_progress" | "completed",
+    inspectionStatus: "not_started" | "in_progress" | "completed" | "failed",
   ) => {
     if (!vendorId) {
       throw new BadRequestException(

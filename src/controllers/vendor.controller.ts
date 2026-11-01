@@ -348,7 +348,7 @@ export class VendorController {
       req: Request<
         { id: string },
         {},
-        { inspectionStatus: "not_started" | "in_progress" | "completed" }
+        { inspectionStatus: "not_started" | "in_progress" | "completed" | "failed" }
       >,
       res: Response,
     ): Promise<Response> => {

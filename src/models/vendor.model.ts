@@ -37,7 +37,7 @@ export interface VendorDocument extends Document {
   // Admin-tracked manual verification/inspection progress, separate from
   // approvalStatus — tracks whether an admin has reviewed the vendor's
   // submitted documents/business, independent of the approve/reject decision.
-  inspectionStatus: "not_started" | "in_progress" | "completed";
+  inspectionStatus: "not_started" | "in_progress" | "completed" | "failed";
   isAvailable: boolean;
   openingHours: VendorOpeningHours;
   payoutSettings: VendorPayoutSettings;
@@ -133,7 +133,7 @@ const VendorSchema = new Schema({
   },
   inspectionStatus: {
     type: String,
-    enum: ["not_started", "in_progress", "completed"],
+    enum: ["not_started", "in_progress", "completed", "failed"],
     default: "not_started",
   },
   isAvailable: {

@@ -74,7 +74,8 @@ export const updateVendorProfileSchema = z
   );
 
 export const updateVendorInspectionStatusSchema = z.object({
-  inspectionStatus: z.enum(["not_started", "in_progress", "completed"]),
+  // Inspection progress only. Approval is a separate, explicit admin action.
+  inspectionStatus: z.enum(["not_started", "in_progress", "completed", "failed"]),
 });
 
 export const updateVendorAvailabilitySchema = z
