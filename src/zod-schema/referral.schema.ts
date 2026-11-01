@@ -193,6 +193,8 @@ export const listAttributionsQuerySchema = paginationQuerySchema.extend({
 
 export const listCampaignsQuerySchema = paginationQuerySchema.extend({
   partnerId: objectId.optional(),
+  // "true" lists only campaigns that are not tied to a partner (internal TOW campaigns).
+  internal: z.enum(["true"]).optional(),
   status: z.enum(["draft", "active", "paused", "ended"]).optional(),
 });
 

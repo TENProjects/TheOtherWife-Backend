@@ -197,10 +197,11 @@ export class ReferralAdminService {
   };
 
   listCampaigns = async (
-    filters: Pagination & { partnerId?: string; status?: string },
+    filters: Pagination & { partnerId?: string; status?: string; internal?: "true" },
   ): Promise<ListResult<Record<string, unknown>>> => {
     const { page, limit, skip } = paginate(filters);
     const query: Record<string, unknown> = {};
+    if (filters.internal === "true") query.programType = { $ne: "partner" };
     if (filters.partnerId) {
       assertObjectId(filters.partnerId, "partner");
       query.partnerId = filters.partnerId;
