@@ -5,6 +5,7 @@ import { UserController } from "../controllers/user.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { roleGuardMiddleware } from "../middlewares/role-guard.middleware.js";
 import { adminRateLimitMiddleware } from "../middlewares/admin-rate-limit.middleware.js";
+import { requireAdminRole } from "../middlewares/require-admin-role.middleware.js";
 
 /**
  * @swagger
@@ -136,6 +137,8 @@ class AdminUserDirectoryRouter {
       authMiddleware,
       roleGuardMiddleware(["admin"]),
       adminRateLimitMiddleware,
+      // Money and administration: super admins only (managers and support agents excluded).
+      requireAdminRole(["super_admin"]),
     );
     this.initializeRoutes();
   }

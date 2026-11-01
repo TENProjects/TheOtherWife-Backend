@@ -10,6 +10,7 @@ import {
   adminRateLimitMiddleware,
   adminSensitiveActionRateLimitMiddleware,
 } from "../middlewares/admin-rate-limit.middleware.js";
+import { requireAdminRole } from "../middlewares/require-admin-role.middleware.js";
 
 /**
  * @swagger
@@ -119,6 +120,8 @@ class AdminRefundRequestRouter {
       authMiddleware,
       roleGuardMiddleware(["admin"]),
       adminRateLimitMiddleware,
+      // Money and administration: super admins only (managers and support agents excluded).
+      requireAdminRole(["super_admin"]),
     );
     this.initializeRoutes();
   }

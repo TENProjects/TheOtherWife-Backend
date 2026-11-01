@@ -71,7 +71,8 @@ class AdminUserManagementRouter {
       authMiddleware,
       roleGuardMiddleware(["admin"]),
       adminRateLimitMiddleware,
-      requireAdminRole(["super_admin", "manager"]),
+      // Money and administration: super admins only (managers and support agents excluded).
+      requireAdminRole(["super_admin"]),
     );
     this.initializeRoutes();
   }
