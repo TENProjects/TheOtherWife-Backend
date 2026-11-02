@@ -4,7 +4,11 @@
 // one yet, using their bank details (payout settings, or the onboarding
 // step 2 details if payout settings are empty).
 //
-// DRY RUN by default: it only reads and prints who would be affected.
+// DRY RUN by default: it only reads. For each vendor it also asks Paystack's
+// read-only account lookup (/bank/resolve) which name the BANK holds for the
+// account, so a person can confirm every account belongs to that vendor
+// before anything is created. --apply only processes vendors whose account
+// the bank confirmed in the same run.
 //
 //   npm run backfill:paystack-subaccounts                 dry run (no writes)
 //   npm run backfill:paystack-subaccounts -- --apply      create subaccounts
@@ -24,6 +28,7 @@ import { pathToFileURL } from "node:url";
 import { Db } from "../config/db.config.js";
 import Vendor from "../models/vendor.model.js";
 import { VendorService } from "../services/vendor.service.js";
+import { PaystackSubaccountService } from "../services/paystack-subaccount.service.js";
 import { hasPayoutBankDetails, onboardingBankDetails } from "../util/vendor-bank-details.util.js";
 
 const APPLY = process.argv.includes("--apply");
@@ -44,6 +49,9 @@ type Plan = {
   bank: string;
   account: string;
   previousError: string;
+  paystackBank?: string;
+  bankAccountHolder?: string;
+  check?: string;
 };
 
 const planFor = (vendor: any): Plan => {
@@ -84,7 +92,24 @@ const run = async () => {
     const plans = vendors.map(planFor);
     const actionable = plans.filter((p) => p.source !== "none");
 
-    console.table(plans);
+    // Read-only bank lookup for each vendor: which bank, and whose name is on the account.
+    const lookup = new PaystackSubaccountService();
+    const detailsById = new Map(vendors.map((v: any) => [String(v._id), v]));
+    for (const [index, plan] of actionable.entries()) {
+      const v: any = detailsById.get(plan.vendorId);
+      const d = hasPayoutBankDetails(v.payoutSettings) ? v.payoutSettings.bankDetails : onboardingBankDetails(v.additionalData);
+      try {
+        const r = await lookup.resolveAccount(String(d?.bankName ?? ""), String(d?.accountNumber ?? "").trim());
+        plan.paystackBank = r.bankName;
+        plan.bankAccountHolder = r.accountName;
+        plan.check = "verified";
+      } catch (error) {
+        plan.check = `NOT VERIFIED: ${error instanceof Error ? error.message : String(error)}`.slice(0, 120);
+      }
+      if (index < actionable.length - 1) await new Promise((r) => setTimeout(r, 600));
+    }
+
+    console.table(plans.map(({ previousError, ...row }) => ({ ...row, previousError: previousError.slice(0, 40) })));
     console.log(
       `${plans.length} approved vendor(s) without a subaccount: ${actionable.length} with usable bank details, ` +
         `${plans.length - actionable.length} with none (they must add bank details in the app).`,
@@ -96,7 +121,12 @@ const run = async () => {
     }
 
     const service = new VendorService();
-    const batch = actionable.slice(0, LIMIT);
+    // Only accounts the bank just confirmed: never send an unverified account to Paystack.
+    const verified = actionable.filter((p) => p.check === "verified");
+    const batch = verified.slice(0, LIMIT);
+    if (actionable.length > verified.length) {
+      console.log(`Skipping ${actionable.length - verified.length} vendor(s) whose account could not be verified (see the table).`);
+    }
     let created = 0;
     let failed = 0;
     for (const [index, plan] of batch.entries()) {
@@ -112,7 +142,7 @@ const run = async () => {
     }
     console.log(
       `Done: ${created} created, ${failed} failed (see the admin subaccount list), ` +
-        `${Math.max(actionable.length - batch.length, 0)} left for the next run (--limit ${LIMIT}).`,
+        `${Math.max(verified.length - batch.length, 0)} verified vendor(s) left for the next run (--limit ${LIMIT}).`,
     );
   } catch (error) {
     console.error("Backfill failed", error);

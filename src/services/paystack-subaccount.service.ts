@@ -5,12 +5,7 @@ import { ErrorCode } from "../enums/error-code.enum.js";
 import { BadRequestException } from "../errors/bad-request-exception.error.js";
 import { InternalServerError } from "../errors/internal-server.error.js";
 import { paystackSecretKey, paystackBaseUrl } from "../constants/env.js";
-
-type PaystackBank = {
-  name: string;
-  code: string;
-  active: boolean;
-};
+import { matchPaystackBank, type PaystackBank } from "../util/paystack-bank-match.util.js";
 
 // Financial & Commission Spec v1.0, section 3.2 dev note — creates/links a
 // Paystack subaccount for a vendor at approval time so the 80/20 split
@@ -59,23 +54,54 @@ export class PaystackSubaccountService {
     return data.data;
   };
 
-  resolveBankCode = async (bankName: string): Promise<string> => {
-    const banks = await this.listNigerianBanks();
-    const normalized = bankName.trim().toLowerCase();
-
-    const match =
-      banks.find((bank) => bank.name.toLowerCase() === normalized) ??
-      banks.find((bank) => bank.name.toLowerCase().includes(normalized));
-
-    if (!match) {
+  /** The one Paystack bank a vendor's bank name refers to (see paystack-bank-match.util.ts). */
+  resolveBank = async (bankName: string): Promise<PaystackBank> => {
+    const match = matchPaystackBank(bankName, await this.listNigerianBanks());
+    if (!match.ok) {
       throw new BadRequestException(
-        `Could not match "${bankName}" to a recognized Nigerian bank — please use the exact bank name (e.g. "Guaranty Trust Bank").`,
+        match.reason === "ambiguous"
+          ? `"${bankName}" could mean more than one bank (${(match.candidates ?? []).slice(0, 3).join(", ")}). Please use the full bank name.`
+          : `Could not match "${bankName}" to a recognized Nigerian bank — please use the exact bank name (e.g. "Guaranty Trust Bank").`,
         HttpStatus.BAD_REQUEST,
         ErrorCode.VALIDATION_ERROR,
       );
     }
+    return match.bank;
+  };
 
-    return match.code;
+  resolveBankCode = async (bankName: string): Promise<string> => (await this.resolveBank(bankName)).code;
+
+  /**
+   * Read-only bank lookup: the name the bank holds for this account. Creates
+   * nothing. Used to let a person confirm an account belongs to the vendor
+   * before a subaccount is created (scripts/backfill-paystack-subaccounts.ts).
+   */
+  resolveAccount = async (
+    bankName: string,
+    accountNumber: string,
+  ): Promise<{ bankName: string; bankCode: string; accountName: string }> => {
+    this.assertConfigured();
+    const bank = await this.resolveBank(bankName);
+    if (!/^d{10}$/.test(accountNumber)) {
+      throw new BadRequestException("Account number must be 10 digits", HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR);
+    }
+    const response = await fetch(
+      `${paystackBaseUrl}/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bank.code)}`,
+      { headers: { Authorization: `Bearer ${paystackSecretKey}` } },
+    );
+    const data = (await response.json().catch(() => ({}))) as {
+      status?: boolean;
+      message?: string;
+      data?: { account_name?: string; account_number?: string };
+    };
+    if (!response.ok || !data.status || !data.data?.account_name || data.data.account_number !== accountNumber) {
+      throw new BadRequestException(
+        data.message || "Could not verify this account with the bank",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+    return { bankName: bank.name, bankCode: bank.code, accountName: data.data.account_name };
   };
 
   // percentage_charge is the MAIN account's cut when Paystack applies this
