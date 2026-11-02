@@ -82,7 +82,7 @@ export class PaystackSubaccountService {
   ): Promise<{ bankName: string; bankCode: string; accountName: string }> => {
     this.assertConfigured();
     const bank = await this.resolveBank(bankName);
-    if (!/^d{10}$/.test(accountNumber)) {
+    if (!/^\d{10}$/.test(accountNumber)) {
       throw new BadRequestException("Account number must be 10 digits", HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR);
     }
     const response = await fetch(
