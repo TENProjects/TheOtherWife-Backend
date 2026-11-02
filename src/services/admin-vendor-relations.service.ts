@@ -20,6 +20,11 @@ import VendorCallLog from "../models/vendorCallLog.model.js";
 import AdminAuditLog from "../models/adminAuditLog.model.js";
 import { VendorService } from "./vendor.service.js";
 import { PushNotificationService } from "./push-notification.service.js";
+import { hasPayoutBankDetails } from "../util/vendor-bank-details.util.js";
+
+// Last four digits are enough to recognise an account in a health list.
+const maskAccountNumber = (value: unknown) =>
+  typeof value === "string" && value.length > 4 ? `******${value.slice(-4)}` : value;
 
 // A vendor is considered "high performing" once it has a real rating track
 // record at or above this average.
@@ -106,11 +111,25 @@ export class AdminVendorRelationsService {
   // subaccount — either still pending their first attempt or stuck on a
   // stored error (e.g. an unrecognized bank name) — so admins don't have to
   // dig through server logs to find them.
+  // Also lists APPROVED vendors whose only bank details are the ones from
+  // onboarding step 2: Retry (or approval) adopts those details and creates
+  // the subaccount, so none of them stay invisible.
   getPaystackSubaccountIssues = async () => {
     const vendors = await Vendor.find({
       paystackSubaccountCode: null,
-      "payoutSettings.bankDetails.bankName": { $nin: [null, ""] },
-      "payoutSettings.bankDetails.accountNumber": { $nin: [null, ""] },
+      // Only approved vendors' details may go to Paystack (see tryCreatePaystackSubaccount).
+      approvalStatus: "approved",
+      $or: [
+        {
+          "payoutSettings.bankDetails.bankName": { $nin: [null, ""] },
+          "payoutSettings.bankDetails.accountNumber": { $nin: [null, ""] },
+        },
+        {
+          approvalStatus: "approved",
+          "additionalData.payout.bankName": { $nin: [null, ""] },
+          "additionalData.payout.accountNumber": { $nin: [null, ""] },
+        },
+      ],
     })
       .populate<{ userId: { firstName?: string; lastName?: string; email?: string } }>(
         "userId",
@@ -125,8 +144,11 @@ export class AdminVendorRelationsService {
         businessName: vendor.businessName,
         vendorName: this.formatVendorName(vendor.userId),
         email: vendor.userId?.email,
-        bankName: vendor.payoutSettings?.bankDetails?.bankName,
-        accountNumber: vendor.payoutSettings?.bankDetails?.accountNumber,
+        bankName: vendor.payoutSettings?.bankDetails?.bankName || vendor.additionalData?.payout?.bankName,
+        accountNumber: maskAccountNumber(
+          vendor.payoutSettings?.bankDetails?.accountNumber || vendor.additionalData?.payout?.accountNumber,
+        ),
+        bankDetailsSource: hasPayoutBankDetails(vendor.payoutSettings) ? "payout_settings" : "onboarding",
         error: vendor.paystackSubaccountError,
         errorAt: vendor.paystackSubaccountErrorAt,
       })),

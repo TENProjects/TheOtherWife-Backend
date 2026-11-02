@@ -277,6 +277,13 @@ export class PaymentService {
         ErrorCode.VALIDATION_ERROR,
       );
     }
+    if (event.data?.currency && event.data.currency !== payment.currency) {
+      throw new BadRequestException(
+        "Payment currency mismatch",
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
 
     const result = await transaction.use(
       async (session: ClientSession, paymentId: string, providerPayload: any) => {

@@ -28,6 +28,7 @@ import {
 } from "../util/vendor-opening-hours.util.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
 import { PaystackSubaccountService } from "./paystack-subaccount.service.js";
+import { adoptOnboardingBankDetails } from "../util/vendor-bank-details.util.js";
 
 export class VendorService {
   private searchRadiusService: SearchRadiusService;
@@ -49,6 +50,18 @@ export class VendorService {
     if (vendor.paystackSubaccountCode) {
       return;
     }
+
+    // A vendor's bank details only ever reach Paystack after an admin has
+    // approved them. This is the one place every path goes through
+    // (approval, admin Retry, the backfill script), so it is enforced here.
+    if (vendor.approvalStatus !== "approved") {
+      return;
+    }
+
+    // Vendors give their bank details at onboarding step 2; use them if the
+    // payout settings are still empty (never overwrites saved settings).
+    // Persisted by the save in either branch below.
+    adoptOnboardingBankDetails(vendor);
 
     const bankDetails = vendor.payoutSettings?.bankDetails;
     if (!bankDetails?.bankName || !bankDetails?.accountNumber) {

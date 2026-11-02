@@ -209,6 +209,15 @@ export class OrderPaymentService {
             ErrorCode.VALIDATION_ERROR,
           );
         }
+        // Same rule as verifyPaystackTransaction: the right number in the
+        // wrong currency is not a payment for this order.
+        if (providerPayload?.currency && providerPayload.currency !== paymentRecord.currency) {
+          throw new BadRequestException(
+            "Payment currency mismatch",
+            HttpStatus.BAD_REQUEST,
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
 
         const previousStatus = paymentRecord.status;
         const paidAt = providerPayload?.paid_at ? new Date(providerPayload.paid_at) : new Date();

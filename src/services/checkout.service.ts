@@ -22,6 +22,7 @@ import { PaymentLedgerService } from "./payment-ledger.service.js";
 import { PromoCodeService } from "./promo-code.service.js";
 import { isVendorReceivingOrders } from "../util/vendor-opening-hours.util.js";
 import { WalletService } from "./wallet.service.js";
+import { vendorOwedClawback } from "./vendor-wallet.service.js";
 import { appSignalDispatcher } from "../dispatcher/app-signal.dispatcher.js";
 import { orderPaymentService } from "./order-payment.service.js";
 import { vendorSplitOf } from "../util/finance-definitions.util.js";
@@ -47,6 +48,14 @@ export const calculatePaystackFee = (customerTotal: number): number =>
     Math.round(customerTotal * PAYSTACK_FEE_RATE + PAYSTACK_FEE_FLAT),
     PAYSTACK_FEE_CAP,
   );
+
+/**
+ * Whether a Paystack split can pay the vendor their full 80%: after the
+ * vendor's share, TOW's part of the charge must still cover the Paystack fee
+ * (TOW bears it, bearer "account"). Naira in, boolean out.
+ */
+export const splitCoversVendorShare = (paystackAmountDue: number, vendorNetAmount: number): boolean =>
+  paystackAmountDue - vendorNetAmount >= calculatePaystackFee(paystackAmountDue);
 
 type CheckoutItem = {
   mealId: string;
@@ -503,10 +512,23 @@ export class CheckoutService {
         const paystackFeeAmount = calculatePaystackFee(
           checkoutContext.pricing.totalAmount,
         );
+        // Split only when it is guaranteed to be exact. Otherwise the whole
+        // charge lands on TOW's account and the vendor's 80% is paid from
+        // their wallet balance, as for vendors without a subaccount:
+        //  - the Paystack charge must cover the vendor's 80% plus the
+        //    Paystack fee (TOW bears the fee from its share). When a wallet
+        //    payment covers most of the order, Paystack charges only the
+        //    remainder, and a split would short-pay the vendor while
+        //    recording them as fully paid.
+        //  - the vendor must not owe a clawback. Their next earnings then
+        //    stay in their TOW wallet and repay it; splitting resumes after.
+        const splitCoversVendor = splitCoversVendorShare(paystackAmountDue, vendorNetAmount);
         const splitPayment =
           paymentProvider === "paystack" &&
           paystackAmountDue > 0 &&
-          !!checkoutContext.vendor.paystackSubaccountCode;
+          !!checkoutContext.vendor.paystackSubaccountCode &&
+          splitCoversVendor &&
+          (await vendorOwedClawback(checkoutContext.vendor._id, session)) === 0;
 
         const [newPayment] = await Payment.create(
           [

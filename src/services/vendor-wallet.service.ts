@@ -31,6 +31,43 @@ type AdminPayoutStatus = "requested" | "processing" | "approved" | "rejected";
 // the vendor's share on disputes.
 const VENDOR_EARNING_PAYMENT_STATUSES = ["succeeded", "refunded"];
 
+/**
+ * How much a vendor still owes TOW from clawbacks (cancelled/rejected orders
+ * whose 80% had already been paid out), in naira. Same formula as the wallet
+ * balance in getVendorWalletSummary (net − settled − clawback, summed across
+ * all payments): a negative total is a debt. Checkout uses this to stop
+ * splitting a vendor's new payments until the debt is repaid from them.
+ */
+export const vendorOwedClawback = async (
+  vendorId: mongoose.Types.ObjectId | string,
+  session?: ClientSession,
+): Promise<number> => {
+  const aggregate = Payment.aggregate<{ pendingRaw: number }>([
+    {
+      $match: {
+        vendorId: new mongoose.Types.ObjectId(String(vendorId)),
+        status: { $in: VENDOR_EARNING_PAYMENT_STATUSES },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        pendingRaw: {
+          $sum: {
+            $subtract: [
+              "$vendorNetAmount",
+              { $add: ["$vendorSettledAmount", { $ifNull: ["$vendorClawbackAmount", 0] }] },
+            ],
+          },
+        },
+      },
+    },
+  ]);
+  if (session) aggregate.session(session);
+  const [row] = await aggregate;
+  return Math.max(-(row?.pendingRaw ?? 0), 0);
+};
+
 export class VendorWalletService {
   private paystackSubaccountService: PaystackSubaccountService;
   private paymentLedgerService: PaymentLedgerService;
